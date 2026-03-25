@@ -1,0 +1,16 @@
+<library file="*.cc" name="DisappTrksv2Plugins">
+  <use name="FWCore/Framework"/>
+  <use name="FWCore/PluginManager"/>
+  <use name="FWCore/ParameterSet"/>
+  <use name="DataFormats/PatCandidates"/>
+  <use name="DataFormats/VertexReco"/>
+  <use name="CommonTools/UtilAlgos"/>
+  <use name="SimDataFormats/GeneratorProducts"/>
+  <use name="clhep"/>
+  <use name="root"/>
+  <use name="Geometry/CaloGeometry"/>
+  <use name="CondFormats/EcalObjects"/>
+  <use name="CondFormats/DataRecord"/>
+  <use name="correctionlib"/>
+</library>
+<flags EDM_PLUGIN="1"/>
