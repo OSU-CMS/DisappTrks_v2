@@ -2,6 +2,41 @@
 
 # Create Skims for Tag and Probe studies for background estimation
 import FWCore.ParameterSet.Config as cms
+from FWCore.ParameterSet.VarParsing import VarParsing
+
+options = VarParsing('analysis')
+
+options.register(
+    "era",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Data-taking era"
+)
+options.register(
+    "electronFiducialMap",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Path to electron fiducial map"
+)
+options.register(
+    "muonFiducialMap",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Path to muon fiducial map"
+)
+options.parseArguments()
+
+def require(name, value):
+    if not value:
+        raise RuntimeError(f"Required argument '{name}' was not provided.\n"
+                           f"Usage: cmsRun cfg.py {name}=<value>")
+
+require("era",                 options.era)
+require("electronFiducialMap", options.electronFiducialMap)
+require("muonFiducialMap",     options.muonFiducialMap)
 
 processName = "ZtoTauEleProbeTrk"
 process = cms.Process(processName)
@@ -31,21 +66,21 @@ process.GlobalTag = GlobalTag(process.GlobalTag,
 
 process.source = cms.Source("PoolSource",
     fileNames = cms.untracked.vstring(
-        'root://cmseos.fnal.gov//eos/uscms/store/user/lpclonglived/DisappTrks/EGamma0/ElectronTagSkim_2024G_v1_EGamma0/260303_183737/0000/skim_ElectronTagSkim_2026_03_03_12h35m53s_999.root'),
+        options.inputFiles
+    ),
     inputCommands = cms.untracked.vstring(
             'keep *',
             'drop *_*_eventvariables_*',
-        )
+            'drop edmTriggerResults_TriggerResults__OSUAnalysis*'
+    )
     
 )
 
-process.maxEvents = cms.untracked.PSet(input = cms.untracked.int32(-1))
+process.maxEvents = cms.untracked.PSet(input = cms.untracked.int32(options.maxEvents))
 
-# Used to store histograms
 process.TFileService = cms.Service("TFileService",
-    fileName = cms.string("ZtoEleProbeTrk.root")
+    fileName = cms.string("histograms.root")
 )
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Producer chain — each filter consumes the output of the previous one,
 # guaranteeing all cuts act on the same track object.
@@ -68,7 +103,7 @@ process.hltFilter = cms.EDFilter("HLTHighLevel",
     throw              = cms.bool(False),
 )
 
-process.QualityCut = cms.EDFilter("QualityCut",
+process.electronQualityCut = cms.EDFilter("ElectronQualityCut",
     src          = cms.InputTag("slimmedElectrons"),
     met          = cms.InputTag("jecAppliedMetProducer:CorrectedMet"),
     vertices     = cms.InputTag("offlineSlimmedPrimaryVertices"),
@@ -76,6 +111,9 @@ process.QualityCut = cms.EDFilter("QualityCut",
     maxEta       = cms.double(2.1),
     tightIdLabel = cms.string("cutBasedElectronID-RunIIIWinter22-V1-tight"),
     triggerObjects = cms.InputTag("slimmedPatTrigger"),
+    triggerResults    = cms.InputTag("TriggerResults", "", "HLT"),   # ← missing
+    triggerCollection = cms.string("hltEgammaCandidates::HLT"),      # ← missing
+    triggerFilter     = cms.string("hltEle32WPTightGsfTrackIsoFilter"), # ← missing
     instanceLabel = cms.string("QualityCut")
 )
 
@@ -85,8 +123,6 @@ process.QualityCut = cms.EDFilter("QualityCut",
 # Produces: ("ZtoProbeTrkTrackSelections", "probeTracks")
 process.ZtoProbeTrkTrackSelections = cms.EDFilter("ZtoProbeTrkTrackSelections",
     tracks       = cms.InputTag("isolatedTracks"),
-    muons        = cms.InputTag("selectedMuons"),
-    electrons    = cms.InputTag("QualityCut:qualityLeptons"),
     jets         = cms.InputTag("jecAppliedJetProducer:CorrectedAK4"),   # CHS jets — matches old framework
     minPt        = cms.double(30),
     minLayers    = cms.int32(4),
@@ -107,7 +143,7 @@ process.TrackElectronFiducialFilter = cms.EDFilter("TrackFiducialFilter",
     useEraByEraFiducialMaps = cms.bool(False),
     fiducialMaps = cms.VPSet(
         cms.PSet(
-            histFile           = cms.FileInPath("DisappTrks_v2/data/electronFiducialMap_2024G_data.root"),
+            histFile           = cms.FileInPath(options.electronFiducialMap),
             era                = cms.string(""),
             beforeVetoHistName = cms.string("beforeVeto"),
             afterVetoHistName  = cms.string("afterVeto"),
@@ -124,7 +160,7 @@ process.TrackMuonFiducialFilter = cms.EDFilter("TrackFiducialFilter",
     useEraByEraFiducialMaps = cms.bool(False),
     fiducialMaps = cms.VPSet(
         cms.PSet(
-            histFile           = cms.FileInPath("DisappTrks_v2/data/muonFiducialMap_2024G_data.root"),
+            histFile           = cms.FileInPath(options.muonFiducialMap),
             era                = cms.string(""),
             beforeVetoHistName = cms.string("beforeVeto"),
             afterVetoHistName  = cms.string("afterVeto"),
@@ -151,11 +187,6 @@ process.JvmAppliedEventFilter = cms.EDFilter("JvmAppliedEventFilter",
         JvmConfig  = cms.FileInPath("DisappTrks_v2/data/JvmConfig.json"),
     ),
 )
-process.TrackDRMinJetAnalyzer = cms.EDAnalyzer("TrackDRMinJetAnalyzer",
-    tracks = cms.InputTag("TrackTauDeltaRFilter", "deltaRTracks"),
-    jets   = cms.InputTag("slimmedJetsPuppi"),
-)
-
 
 process.selectedTaus = cms.EDFilter("PATTauSelector",
     src    = cms.InputTag("slimmedTaus"),
@@ -176,14 +207,6 @@ process.selectedMuons = cms.EDFilter("PATMuonSelector",
         "abs(eta) < 2.4 && "
         "isLooseMuon && "
         "isPFMuon"
-    ),
-    filter = cms.bool(False),
-)
-
-process.selectedElectrons = cms.EDFilter("PATElectronSelector",
-    src = cms.InputTag("slimmedElectrons"),
-    cut = cms.string(
-        "electronID('cutBasedElectronID-RunIIIWinter22-V1-tight') > 0.5"
     ),
     filter = cms.bool(False),
 )
@@ -216,8 +239,7 @@ process.out = cms.OutputModule("PoolOutputModule",
         'keep patIsolatedTracks_isolatedTracks__*',
         'keep *_TrackElectronFiducialFilter_fiducialTracks_*',
         'keep *_TrackMuonDeltaRFilter_deltaRTracks_*',
-        'keep *_TrackTauDeltaRFilter_deltaRTracks_*',
-        'keep *_QualityCut_qualityLeptons_*'
+        'keep *_ElectronQualityCut_qualityLeptons_*'
     )
 )
 process.load('DisappTrks_v2.BkgdEstimation.JecAppliedJetProducer_cfi')
@@ -230,7 +252,7 @@ process.mypath = cms.Path(
     process.jecAppliedJetProducer       * # Apply Jet corrections
     process.jecAppliedMetProducer       * # Apply MET Corrections
     process.selectedMuons               * # Apply muon IDs and corrections
-    process.QualityCut                  * # Apply quality cuts on lepton
+    process.electronQualityCut                  * # Apply quality cuts on lepton
     process.ZtoProbeTrkTrackSelections  * # Apply track quality cuts
     process.TrackElectronFiducialFilter * # Passes electron fiducial map
     process.TrackMuonFiducialFilter     * # Passes muon fiducial map
