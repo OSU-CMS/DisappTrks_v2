@@ -170,13 +170,16 @@ process.qualityTrackProducer = cms.EDProducer("QualityTrackProducer",
 )
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
-    tracks    = cms.InputTag("qualityTrackProducer",       "qualityTracks"),
-    met       = cms.InputTag("jecAppliedMetProducer",      "CorrectedMet"),
-    muons     = cms.InputTag("leptonCollectionsProducer",  "qualityMuons"),
-    electrons = cms.InputTag("leptonCollectionsProducer",  "qualityElectrons"),
-    jets      = cms.InputTag("jecAppliedJetProducer",      "CorrectedAK4"),
-    taus      = cms.InputTag("leptonCollectionsProducer",  "qualityTaus"),
-    treeName  = cms.string("Events"),
+    tracks       = cms.InputTag("qualityTrackProducer",      "qualityTracks"),
+    met          = cms.InputTag("jecAppliedMetProducer",     "CorrectedMet"),
+    muons        = cms.InputTag("leptonCollectionsProducer", "qualityMuons"),
+    electrons    = cms.InputTag("leptonCollectionsProducer", "qualityElectrons"),
+    jets         = cms.InputTag("jecAppliedJetProducer",     "CorrectedAK4"),
+    taus         = cms.InputTag("leptonCollectionsProducer", "qualityTaus"),
+    allMuons     = cms.InputTag("slimmedMuons"),
+    allElectrons = cms.InputTag("slimmedElectrons"),
+    allTaus      = cms.InputTag("slimmedTaus"),
+    treeName     = cms.string("Events"),
 )
 
 process.p = cms.Path(

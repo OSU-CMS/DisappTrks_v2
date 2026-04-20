@@ -30,23 +30,37 @@
 namespace {
 
 struct LepKin {
-  std::vector<float> pt, eta, phi, dxy, dz;
+  std::vector<float> pt, eta, phi;
   std::vector<int> charge;
 
   void book(TTree *t, const std::string &pfx) {
     t->Branch((pfx + "_pt").c_str(), &pt);
     t->Branch((pfx + "_eta").c_str(), &eta);
     t->Branch((pfx + "_phi").c_str(), &phi);
-    t->Branch((pfx + "_dxy").c_str(), &dxy);
-    t->Branch((pfx + "_dz").c_str(), &dz);
     t->Branch((pfx + "_charge").c_str(), &charge);
   }
   void clear() {
     pt.clear();
     eta.clear();
     phi.clear();
-    dxy.clear();
-    dz.clear();
+    charge.clear();
+  }
+};
+
+struct LepKinMinimal {
+  std::vector<float> pt, eta, phi;
+  std::vector<int> charge;
+
+  void book(TTree *t, const std::string &pfx) {
+    t->Branch((pfx + "_pt").c_str(), &pt);
+    t->Branch((pfx + "_eta").c_str(), &eta);
+    t->Branch((pfx + "_phi").c_str(), &phi);
+    t->Branch((pfx + "_charge").c_str(), &charge);
+  }
+  void clear() {
+    pt.clear();
+    eta.clear();
+    phi.clear();
     charge.clear();
   }
 };
@@ -142,6 +156,9 @@ private:
   edm::EDGetTokenT<std::vector<pat::Electron>> electronToken_;
   edm::EDGetTokenT<std::vector<pat::Jet>> jetToken_;
   edm::EDGetTokenT<std::vector<pat::Tau>> tauToken_;
+  edm::EDGetTokenT<std::vector<pat::Muon>> allMuonToken_;
+  edm::EDGetTokenT<std::vector<pat::Electron>> allElectronToken_;
+  edm::EDGetTokenT<std::vector<pat::Tau>> allTauToken_;
 
   TTree *tree_;
 
@@ -151,6 +168,7 @@ private:
 
   TrkBranches trk_;
   LepKin muon_, ele_, tau_;
+  LepKinMinimal allMuon_, allEle_, allTau_;
   JetBranches jet_;
 };
 
@@ -168,7 +186,13 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
       jetToken_(consumes<std::vector<pat::Jet>>(
           iConfig.getParameter<edm::InputTag>("jets"))),
       tauToken_(consumes<std::vector<pat::Tau>>(
-          iConfig.getParameter<edm::InputTag>("taus"))) {
+          iConfig.getParameter<edm::InputTag>("taus"))),
+      allMuonToken_(consumes<std::vector<pat::Muon>>(
+          iConfig.getParameter<edm::InputTag>("allMuons"))),
+      allElectronToken_(consumes<std::vector<pat::Electron>>(
+          iConfig.getParameter<edm::InputTag>("allElectrons"))),
+      allTauToken_(consumes<std::vector<pat::Tau>>(
+          iConfig.getParameter<edm::InputTag>("allTaus"))) {
   usesResource(TFileService::kSharedResource);
   edm::Service<TFileService> fs;
   tree_ = fs->make<TTree>(iConfig.getParameter<std::string>("treeName").c_str(),
@@ -187,6 +211,9 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   ele_.book(tree_, "ele");
   jet_.book(tree_, "jet");
   tau_.book(tree_, "tau");
+  allMuon_.book(tree_, "allMuon");
+  allEle_.book(tree_, "allEle");
+  allTau_.book(tree_, "allTau");
 }
 
 // ── analyze
@@ -202,6 +229,9 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   edm::Handle<std::vector<pat::Electron>> electrons;
   edm::Handle<std::vector<pat::Jet>> jets;
   edm::Handle<std::vector<pat::Tau>> taus;
+  edm::Handle<std::vector<pat::Muon>> allMuons;
+  edm::Handle<std::vector<pat::Electron>> allElectrons;
+  edm::Handle<std::vector<pat::Tau>> allTaus;
 
   iEvent.getByToken(trackToken_, tracks);
   iEvent.getByToken(metToken_, mets);
@@ -209,6 +239,9 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   iEvent.getByToken(electronToken_, electrons);
   iEvent.getByToken(jetToken_, jets);
   iEvent.getByToken(tauToken_, taus);
+  iEvent.getByToken(allMuonToken_, allMuons);
+  iEvent.getByToken(allElectronToken_, allElectrons);
+  iEvent.getByToken(allTauToken_, allTaus);
 
   // ── MET and MET^{no mu} ───────────────────────────────────────────────────
   const pat::MET &met = mets->at(0);
@@ -228,16 +261,17 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   trk_.clear();
   muon_.clear();
   ele_.clear();
-  jet_.clear();
   tau_.clear();
+  allMuon_.clear();
+  allEle_.clear();
+  allTau_.clear();
+  jet_.clear();
 
   // ── Fill muons ────────────────────────────────────────────────────────────
   for (const auto &mu : *muons) {
     muon_.pt.push_back(mu.pt());
     muon_.eta.push_back(mu.eta());
     muon_.phi.push_back(mu.phi());
-    muon_.dxy.push_back(mu.muonBestTrack()->dxy());
-    muon_.dz.push_back(mu.muonBestTrack()->dz());
     muon_.charge.push_back(mu.charge());
   }
 
@@ -246,8 +280,6 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     ele_.pt.push_back(el.pt());
     ele_.eta.push_back(el.eta());
     ele_.phi.push_back(el.phi());
-    ele_.dxy.push_back(el.gsfTrack()->dxy());
-    ele_.dz.push_back(el.gsfTrack()->dz());
     ele_.charge.push_back(el.charge());
   }
 
@@ -256,9 +288,27 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     tau_.pt.push_back(tau.pt());
     tau_.eta.push_back(tau.eta());
     tau_.phi.push_back(tau.phi());
-    tau_.dxy.push_back(tau.dxy());
-    tau_.dz.push_back(tau.dz());
     tau_.charge.push_back(tau.charge());
+  }
+
+  // ── Fill all miniAOD leptons (for dR calculations) ───────────────────────
+  for (const auto &mu : *allMuons) {
+    allMuon_.pt.push_back(mu.pt());
+    allMuon_.eta.push_back(mu.eta());
+    allMuon_.phi.push_back(mu.phi());
+    allMuon_.charge.push_back(mu.charge());
+  }
+  for (const auto &el : *allElectrons) {
+    allEle_.pt.push_back(el.pt());
+    allEle_.eta.push_back(el.eta());
+    allEle_.phi.push_back(el.phi());
+    allEle_.charge.push_back(el.charge());
+  }
+  for (const auto &tau : *allTaus) {
+    allTau_.pt.push_back(tau.pt());
+    allTau_.eta.push_back(tau.eta());
+    allTau_.phi.push_back(tau.phi());
+    allTau_.charge.push_back(tau.charge());
   }
 
   // ── Fill tracks ───────────────────────────────────────────────────────────
@@ -295,17 +345,17 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.dPhiMetNoMu.push_back(reco::deltaPhi(trk.phi(), metNoMu_phi_));
     trk_.ptOverMetNoMu.push_back(metNoMu_pt_ > 0.f ? trk.pt() / metNoMu_pt_
                                                    : -1.f);
-
-    // ── Fill jets
-    // ─────────────────────────────────────────────────────────────
-    for (const auto &jet : *jets) {
-      jet_.pt.push_back(jet.pt());
-      jet_.eta.push_back(jet.eta());
-      jet_.phi.push_back(jet.phi());
-      jet_.energy.push_back(jet.energy());
-    }
-
-    tree_->Fill();
+  }
+  // ── Fill jets
+  // ─────────────────────────────────────────────────────────────
+  for (const auto &jet : *jets) {
+    jet_.pt.push_back(jet.pt());
+    jet_.eta.push_back(jet.eta());
+    jet_.phi.push_back(jet.phi());
+    jet_.energy.push_back(jet.energy());
   }
 
-  DEFINE_FWK_MODULE(Ntuplizer);
+  tree_->Fill();
+}
+
+DEFINE_FWK_MODULE(Ntuplizer);
