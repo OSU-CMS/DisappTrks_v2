@@ -71,7 +71,7 @@ struct TrkBranches {
   std::vector<int> charge;
   // hit pattern
   std::vector<int> nHits, nPixelHits, missingOuterHits, missingMiddleHits,
-      missingInnerHits;
+      missingInnerHits, nLayers;
   // isolation
   std::vector<float> pfIso, relativePFIso;
   // calo
@@ -91,6 +91,7 @@ struct TrkBranches {
     t->Branch((pfx + "_missingOuterHits").c_str(), &missingOuterHits);
     t->Branch((pfx + "_missingMiddleHits").c_str(), &missingMiddleHits);
     t->Branch((pfx + "_missingInnerHits").c_str(), &missingInnerHits);
+    t->Branch((pfx + "_nLayers").c_str(), &nLayers);
     t->Branch((pfx + "_pfIso").c_str(), &pfIso);
     t->Branch((pfx + "_relativePFIso").c_str(), &relativePFIso);
     t->Branch((pfx + "_caloEm").c_str(), &caloEm);
@@ -112,6 +113,7 @@ struct TrkBranches {
     missingOuterHits.clear();
     missingMiddleHits.clear();
     missingInnerHits.clear();
+    nLayers.clear();
     pfIso.clear();
     relativePFIso.clear();
     caloEm.clear();
@@ -330,7 +332,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.missingInnerHits.push_back(
         trk.hitPattern().trackerLayersWithoutMeasurement(
             reco::HitPattern::MISSING_INNER_HITS));
-
+    trk_.nLayers.push_back(trk.hitPattern().trackerLayersWithMeasurement());
     const float absIso = trk.pfIsolationDR03().chargedHadronIso();
     trk_.pfIso.push_back(absIso);
     trk_.relativePFIso.push_back(absIso / trk.pt());
