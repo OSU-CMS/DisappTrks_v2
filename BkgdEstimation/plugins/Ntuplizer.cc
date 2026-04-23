@@ -30,7 +30,7 @@
 namespace {
 
 struct LepKin {
-  std::vector<float> pt, eta, phi, ;
+  std::vector<float> pt, eta, phi;
   std::vector<int> charge;
 
   void book(TTree *t, const std::string &pfx) {
@@ -69,14 +69,15 @@ struct TrkBranches {
   // ── Kinematics & track parameters ────────────────────────────────────────
   std::vector<float> pt, eta, phi, dxy, dxyError, dz, dzError;
   std::vector<int> charge, fromPV;
-
+  std::vector<float> deltaEta, deltaPhi;
   // ── Track quality flags ───────────────────────────────────────────────────
   std::vector<bool> isHighPurityTrack, isTightTrack, isLooseTrack;
 
   // ── dE/dx & calo ─────────────────────────────────────────────────────────
   std::vector<float> dEdxStrip, dEdxPixel;
   std::vector<float> caloEm, caloHad, caloTotal;
-  std::vector<int> crossedEcalStatus, crossedHcalStatus;
+  std::vector<std::vector<uint16_t>> crossedEcalStatus;
+  std::vector<std::vector<uint32_t>> crossedHcalStatus;
 
   // ── Isolation ─────────────────────────────────────────────────────────────
   std::vector<float> pfIso, relativePFIso;
@@ -89,7 +90,6 @@ struct TrkBranches {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   std::vector<float> dPhiMet, dPhiMetNoMu, ptOverMetNoMu;
-
   // ══ HitPattern ═══════════════════════════════════════════════════════════
   // ── All hits (TRACK_HITS category) ───────────────────────────────────────
   std::vector<int> hp_numberOfAllHits;
@@ -213,6 +213,8 @@ struct TrkBranches {
     t->Branch((pfx + "_dzError").c_str(), &dzError);
     t->Branch((pfx + "_charge").c_str(), &charge);
     t->Branch((pfx + "_fromPV").c_str(), &fromPV);
+    t->Branch((pfx + "_deltaEta").c_str(), &deltaEta);
+    t->Branch((pfx + "_deltaPhi").c_str(), &deltaPhi);
     // quality
     t->Branch((pfx + "_isHighPurityTrack").c_str(), &isHighPurityTrack);
     t->Branch((pfx + "_isTightTrack").c_str(), &isTightTrack);
@@ -425,6 +427,8 @@ struct TrkBranches {
     dzError.clear();
     charge.clear();
     fromPV.clear();
+    deltaEta.clear();
+    deltaPhi.clear();
     isHighPurityTrack.clear();
     isTightTrack.clear();
     isLooseTrack.clear();
@@ -739,7 +743,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.dzError.push_back(trk.dzError());
     trk_.charge.push_back(trk.charge());
     trk_.fromPV.push_back(trk.fromPV());
-
+    trk_.deltaEta.push_back(trk.deltaEta());
+    trk_.deltaPhi.push_back(trk.deltaPhi());
     // ── Track quality (decoded from trackQuality bitmask) ────────────────────
     trk_.isHighPurityTrack.push_back(trk.isHighPurityTrack());
     trk_.isTightTrack.push_back(trk.isTightTrack());
