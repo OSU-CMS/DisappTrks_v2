@@ -27,7 +27,7 @@ import FWCore.ParameterSet.Config as cms
 from Configuration.AlCa.GlobalTag import GlobalTag
 from FWCore.ParameterSet.VarParsing import VarParsing
 
-options = VarParsing.VarParsing('analysis')
+options = VarParsing('analysis')
 
 options.register(
     "era",
@@ -51,6 +51,13 @@ options.register(
     "Path to muon fiducial map"
 )
 
+options.register(
+    "trigger",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Trigger selection: 'MET', 'SingleElectron', or 'SingleMuon'"
+)
 options.parseArguments()
 
 def require(name, value):
@@ -61,6 +68,38 @@ def require(name, value):
 require("era",                 options.era)
 require("electronFiducialMap", options.electronFiducialMap)
 require("muonFiducialMap",     options.muonFiducialMap)
+require("trigger", options.trigger)
+
+# Define trigger sets
+triggerPaths = {
+    "MET": cms.vstring(
+        "HLT_MET105_IsoTrk50_v*",
+        "HLT_MET120_IsoTrk50_v*",
+        "HLT_PFMET105_IsoTrk50_v*",
+        "HLT_PFMET120_PFMHT120_IDTight_v*",
+        "HLT_PFMET130_PFMHT130_IDTight_v*",
+        "HLT_PFMET140_PFMHT140_IDTight_v*",
+        "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight_v*",
+        "HLT_PFMETNoMu130_PFMHTNoMu130_IDTight_v*",
+        "HLT_PFMETNoMu140_PFMHTNoMu140_IDTight_v*",
+        "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60_v*",
+        "HLT_PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF_v*",
+        "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF_v*",
+        "HLT_PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF_v*",
+        "HLT_PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF_v*",
+        "HLT_PFMET120_PFMHT120_IDTight_PFHT60_v*",
+    ),
+    "SingleElectron": cms.vstring(
+        "HLT_Ele32_WPTight_Gsf_v*",
+    ),
+    "SingleMuon": cms.vstring(
+        "HLT_IsoMu24_v*",
+    ),
+}
+
+if options.trigger not in triggerPaths:
+    raise RuntimeError(f"Unknown trigger '{options.trigger}'. "
+                       f"Choose from: {list(triggerPaths.keys())}")
 
 processName = "NTuplizer"
 process = cms.Process(processName)
@@ -95,10 +134,10 @@ process.TFileService = cms.Service("TFileService",
 
 process.hltFilter = cms.EDFilter("HLTHighLevel",
     TriggerResultsTag  = cms.InputTag("TriggerResults", "", "HLT"),
-    HLTPaths           = cms.vstring("HLT_IsoMu24_v*"),
     eventSetupPathsKey = cms.string(""),
     andOr              = cms.bool(True),
     throw              = cms.bool(False),
+    HLTPaths           = triggerPaths[options.trigger],
 )
 
 # ── TrackElectronFiducialFilter ───────────────────────────────────────────────

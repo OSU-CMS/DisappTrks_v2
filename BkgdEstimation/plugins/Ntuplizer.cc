@@ -30,7 +30,7 @@
 namespace {
 
 struct LepKin {
-  std::vector<float> pt, eta, phi;
+  std::vector<float> pt, eta, phi, ;
   std::vector<int> charge;
 
   void book(TTree *t, const std::string &pfx) {

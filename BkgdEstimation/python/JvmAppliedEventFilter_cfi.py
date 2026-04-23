@@ -1,7 +1,7 @@
 
 import FWCore.ParameterSet.Config as cms
 
-jvmAppliedEventFilter = cms.EDFilter(
+JvmAppliedEventFilter = cms.EDFilter(
     "JvmAppliedEventFilter",
     Jets = cms.PSet(
         SourcesAK4 = cms.InputTag("slimmedJetsPuppi"),
