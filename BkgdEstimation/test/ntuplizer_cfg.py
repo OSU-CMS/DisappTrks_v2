@@ -22,7 +22,7 @@ QualityTracks:
 
 If an event does not contain at least one of these then it is not included in the NTuple
 """
-
+import os
 import FWCore.ParameterSet.Config as cms
 from Configuration.AlCa.GlobalTag import GlobalTag
 from FWCore.ParameterSet.VarParsing import VarParsing
@@ -140,6 +140,23 @@ process.hltFilter = cms.EDFilter("HLTHighLevel",
     HLTPaths           = triggerPaths[options.trigger],
 )
 
+process.metFilters = cms.EDFilter("HLTHighLevel",
+    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "PAT"),
+    eventSetupPathsKey = cms.string(""),
+    andOr              = cms.bool(False),   # AND — must pass all filters
+    throw              = cms.bool(False),
+    HLTPaths           = cms.vstring(
+        "Flag_goodVertices",
+        "Flag_globalSuperTightHalo2016Filter",
+        "Flag_EcalDeadCellTriggerPrimitiveFilter",
+        "Flag_BadPFMuonFilter",
+        "Flag_BadPFMuonDzFilter",
+        "Flag_hfNoisyHitsFilter",
+        "Flag_eeBadScFilter",                # data only
+        "Flag_ecalBadCalibFilter",
+    ),
+)
+
 # ── TrackElectronFiducialFilter ───────────────────────────────────────────────
 # Consumes: ("ZtoProbeTrkTrackSelections", "probeTracks")
 # Produces: ("TrackElectronFiducialFilter", "fiducialTracks")
@@ -185,6 +202,33 @@ process.load('DisappTrks_v2.BkgdEstimation.JecAppliedJetProducer_cfi')
 process.load('DisappTrks_v2.BkgdEstimation.JecAppliedMetProducer_cfi')
 process.load('DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi')
 
+process.tightLepVetoJets = cms.EDFilter("PATJetSelector",
+    src = cms.InputTag("jecAppliedJetProducer", "CorrectedAK4"),
+    cut = cms.string(
+        # Central region |eta| <= 2.6
+        "(abs(eta) <= 2.6"
+        " && neutralHadronEnergyFraction < 0.99"
+        " && neutralEmEnergyFraction < 0.9"
+        " && numberOfDaughters > 1"
+        " && muonEnergyFraction < 0.8"
+        " && chargedHadronEnergyFraction > 0.01"
+        " && chargedMultiplicity > 0"
+        " && chargedEmEnergyFraction < 0.8)"
+        # Transition region 2.6 < |eta| <= 2.7
+        " || (abs(eta) > 2.6 && abs(eta) <= 2.7"
+        " && neutralHadronEnergyFraction < 0.9"
+        " && neutralEmEnergyFraction < 0.99"
+        " && muonEnergyFraction < 0.8"
+        " && chargedEmEnergyFraction < 0.8)"
+        # Forward region 2.7 < |eta| <= 3.0
+        " || (abs(eta) > 2.7 && abs(eta) <= 3.0"
+        " && neutralHadronEnergyFraction < 0.99)"
+        # Very forward region |eta| > 3.0
+        " || (abs(eta) > 3.0"
+        " && neutralEmEnergyFraction < 0.4"
+        " && neutralMultiplicity >= 2)"
+    )
+)
 
 process.leptonCollectionsProducer = cms.EDProducer("LeptonCollectionsProducer",
     electrons       = cms.InputTag("slimmedElectrons"),
@@ -213,7 +257,9 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     met          = cms.InputTag("jecAppliedMetProducer",     "CorrectedMet"),
     muons        = cms.InputTag("leptonCollectionsProducer", "qualityMuons"),
     electrons    = cms.InputTag("leptonCollectionsProducer", "qualityElectrons"),
+    vertices     = cms.InputTag("offlineSlimmedPrimaryVertices"),
     jets         = cms.InputTag("jecAppliedJetProducer",     "CorrectedAK4"),
+    tightJets    = cms.InputTag("tightLepVetoJets"),
     taus         = cms.InputTag("leptonCollectionsProducer", "qualityTaus"),
     allMuons     = cms.InputTag("slimmedMuons"),
     allElectrons = cms.InputTag("slimmedElectrons"),
@@ -223,6 +269,7 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
 
 process.p = cms.Path(
     process.hltFilter *
+    process.metFilters *
     process.TrackElectronFiducialFilter *
     process.TrackMuonFiducialFilter *
     process.TrackEcalDeadChannelFilter *
