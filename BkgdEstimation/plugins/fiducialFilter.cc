@@ -323,7 +323,7 @@ bool TrackFiducialFilter::filter(edm::Event& iEvent,
   // Always put the collection so downstream modules can consume unconditionally.
   iEvent.put(std::move(fiducialTracks), "fiducialTracks");
 
-  return pass;
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
