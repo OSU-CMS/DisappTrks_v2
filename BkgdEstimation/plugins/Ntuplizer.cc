@@ -114,7 +114,7 @@ struct TrkBranches {
 
   // ── dE/dx & calo ─────────────────────────────────────────────────────────
   std::vector<float> dEdxStrip, dEdxPixel;
-  std::vector<float> caloEm, caloHad, caloTotal;
+  std::vector<float> caloEm, caloHad, caloTotal, caloTotNoPU;
   std::vector<std::vector<uint16_t>> crossedEcalStatus;
   std::vector<std::vector<uint32_t>> crossedHcalStatus;
 
@@ -264,6 +264,7 @@ struct TrkBranches {
     t->Branch((pfx + "_caloEm").c_str(), &caloEm);
     t->Branch((pfx + "_caloHad").c_str(), &caloHad);
     t->Branch((pfx + "_caloTotal").c_str(), &caloTotal);
+    t->Branch((pfx + "_caloTotNoPU").c_str(), &caloTotNoPU);
     t->Branch((pfx + "_crossedEcalStatus").c_str(), &crossedEcalStatus);
     t->Branch((pfx + "_crossedHcalStatus").c_str(), &crossedHcalStatus);
     // DR03 PF isolation
@@ -476,6 +477,7 @@ struct TrkBranches {
     caloEm.clear();
     caloHad.clear();
     caloTotal.clear();
+    caloTotNoPU.clear();
     crossedEcalStatus.clear();
     crossedHcalStatus.clear();
     pfIso.clear();
@@ -622,6 +624,9 @@ private:
   edm::EDGetTokenT<std::vector<pat::Tau>> allTauToken_;
   edm::EDGetTokenT<edm::TriggerResults> triggerResultsToken_;
   edm::EDGetTokenT<pat::TriggerObjectStandAloneCollection> triggerObjectsToken_;
+  edm::EDGetTokenT<double> rhoAllToken_;
+  edm::EDGetTokenT<double> rhoAllCaloToken_;
+  edm::EDGetTokenT<double> rhoCentralCaloToken_;
   std::string muonTriggerFilterName_;
   std::string electronTriggerFilterName_;
   float triggerMatchingDR_;
@@ -631,6 +636,7 @@ private:
   unsigned int run_, lumi_;
   unsigned long long eventNum_;
   float met_pt_, met_phi_, metNoMu_pt_, metNoMu_phi_;
+  float rho_all_, rho_allCalo_, rho_centralCalo_;
 
   TrkBranches trk_;
   LepKin muon_, ele_, tau_;
@@ -667,7 +673,10 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
       triggerResultsToken_(consumes<edm::TriggerResults>(
           iConfig.getParameter<edm::InputTag>("triggerResults"))),
       triggerObjectsToken_(consumes<pat::TriggerObjectStandAloneCollection>(
-          iConfig.getParameter<edm::InputTag>("triggerObjects"))) {
+          iConfig.getParameter<edm::InputTag>("triggerObjects"))),
+      rhoAllToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAll"))),
+      rhoAllCaloToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAllCalo"))),
+      rhoCentralCaloToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoCentralCalo"))) {
   muonTriggerFilterName_     = iConfig.getParameter<std::string>("muonTriggerFilterName");
   electronTriggerFilterName_ = iConfig.getParameter<std::string>("electronTriggerFilterName");
   triggerMatchingDR_         = iConfig.getParameter<double>("triggerMatchingDR");
@@ -683,6 +692,9 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   tree_->Branch("met_phi", &met_phi_);
   tree_->Branch("metNoMu_pt", &metNoMu_pt_);
   tree_->Branch("metNoMu_phi", &metNoMu_phi_);
+  tree_->Branch("rho_all", &rho_all_);
+  tree_->Branch("rho_allCalo", &rho_allCalo_);
+  tree_->Branch("rho_centralCalo", &rho_centralCalo_);
 
   trk_.book(tree_, "trk");
   muon_.book(tree_, "muon");
@@ -716,6 +728,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   edm::Handle<std::vector<pat::Tau>> allTaus;
   edm::Handle<edm::TriggerResults> triggerResults;
   edm::Handle<pat::TriggerObjectStandAloneCollection> trigObjs;
+  edm::Handle<double> rhoAll, rhoAllCalo, rhoCentralCalo;
 
   iEvent.getByToken(trackToken_, tracks);
   iEvent.getByToken(metToken_, mets);
@@ -730,6 +743,12 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   iEvent.getByToken(allTauToken_, allTaus);
   iEvent.getByToken(triggerResultsToken_, triggerResults);
   iEvent.getByToken(triggerObjectsToken_, trigObjs);
+  iEvent.getByToken(rhoAllToken_,         rhoAll);
+  iEvent.getByToken(rhoAllCaloToken_,     rhoAllCalo);
+  iEvent.getByToken(rhoCentralCaloToken_, rhoCentralCalo);
+  rho_all_         = *rhoAll;
+  rho_allCalo_     = *rhoAllCalo;
+  rho_centralCalo_ = *rhoCentralCalo;
 
   // Collect (eta, phi) of trigger objects for muon and electron tag filters — unpack once.
   std::vector<std::pair<float, float>> muonTrigObjsEtaPhi;
@@ -843,11 +862,16 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     // ── dE/dx & calo ─────────────────────────────────────────────────────────
     trk_.dEdxStrip.push_back(trk.dEdxStrip());
     trk_.dEdxPixel.push_back(trk.dEdxPixel());
-    const float caloEm = trk.matchedCaloJetEmEnergy();
+    const float caloEm  = trk.matchedCaloJetEmEnergy();
     const float caloHad = trk.matchedCaloJetHadEnergy();
+    const float caloTot = caloEm + caloHad;
+    // PU-corrected calo energy: max(0, E_raw - rho * pi * dR^2), dR=0.4, CentralCalo rho
+    // Mirrors caloNewFromCaloJetNoPUDRp4CentralCalo from the old OSUT3Analysis framework.
+    const float caloTotNoPU = std::max(0.f, caloTot - (float)(rho_centralCalo_ * M_PI * 0.4 * 0.4));
     trk_.caloEm.push_back(caloEm);
     trk_.caloHad.push_back(caloHad);
-    trk_.caloTotal.push_back(caloEm + caloHad);
+    trk_.caloTotal.push_back(caloTot);
+    trk_.caloTotNoPU.push_back(caloTotNoPU);
     trk_.crossedEcalStatus.push_back(trk.crossedEcalStatus());
     trk_.crossedHcalStatus.push_back(trk.crossedHcalStatus());
 

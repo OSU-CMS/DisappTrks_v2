@@ -53,7 +53,7 @@ branches = [
     "tau_pt", "tau_eta", "tau_phi",
     "trk_pt", "trk_eta", "trk_phi", "trk_charge",
     "trk_nHits", "trk_missingInnerHits", "trk_missingMiddleHits", "trk_missingOuterHits",
-    "trk_relativePFIso", "trk_caloTotal",
+    "trk_relativePFIso", "trk_caloTotal", "trk_caloTotNoPU",
     "jet_pt", "jet_phi", "jet_eta",
 ]
 
@@ -86,7 +86,7 @@ for start in range(0, total_entries, CHUNK_SIZE):
     track_eta_cut_1 = (np.abs(arrays["trk_eta"]) < 0.15) | (np.abs(arrays["trk_eta"]) > 0.35)
     track_eta_cut_2 = (np.abs(arrays["trk_eta"]) < 1.42) | (np.abs(arrays["trk_eta"]) > 1.65)
     track_eta_cut_3 = (np.abs(arrays["trk_eta"]) < 1.55) | (np.abs(arrays["trk_eta"]) > 1.85)
-    track_ecalo_cut = arrays["trk_caloTotal"] < 10
+    track_ecalo_cut = arrays["trk_caloTotNoPU"] < 10
     track_mask      = track_pt_cut & track_eta_cut & track_eta_cut_1 & track_eta_cut_2 & track_eta_cut_3 & track_ecalo_cut
 
     # drop events with no passing tracks

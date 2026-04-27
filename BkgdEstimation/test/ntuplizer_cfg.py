@@ -307,7 +307,11 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     treeName     = cms.string("Events"),
     triggerResults=cms.InputTag("TriggerResults", "", "HLT"),
     triggerObjects=cms.InputTag("slimmedPatTrigger"),
-    triggerMatchingDR=cms.double(0.3))
+    triggerMatchingDR=cms.double(0.3),
+    rhoAll         =cms.InputTag("fixedGridRhoFastjetAll"),
+    rhoAllCalo     =cms.InputTag("fixedGridRhoFastjetAllCalo"),
+    rhoCentralCalo =cms.InputTag("fixedGridRhoFastjetCentralCalo"),
+)
 
 process.p = cms.Path(
     process.hltFilter *
