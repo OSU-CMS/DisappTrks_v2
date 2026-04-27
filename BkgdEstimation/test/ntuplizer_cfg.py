@@ -1,26 +1,14 @@
 """
-This configuration file is mean to create the generalized Ntuples that will be used for the analysis.
-For all objects the relevant corrections/ID criteria are applied
+Ntuplizer configuration for the DisappTrks_v2 background estimation.
 
-This ntuple contains the following collections
+No pre-selection cuts are applied to leptons or tracks — all objects from the
+slimmed/isolated collections are written to the ntuple so that analysis cuts
+can be varied offline. Discriminating variables (isTight, pfRelIso04_dBeta,
+isTightLepVeto, hit pattern, calo isolation, etc.) are stored as branches.
 
-QualityLeptons:
-
-- pT > 20GeV
-- |eta| < 2.1
-- passes Tight ID
-
-QualityTracks:
-- pT > 20GeV
-- Passes Fiducial Selection
-- >= 4 Pixel Hits
-- 0 Missing Inner Hits
-- 0 Missing Middle Hits
-- Relative PF Isolation < 0.05
-- |dxy| < 0.02cm
-- |dx| < 0.5cm
-
-If an event does not contain at least one of these then it is not included in the NTuple
+Event-level filters applied in the path:
+  - HLT trigger filter
+  - MET filters (goodVertices, halo, ECAL/HCAL noise, eeBadSc, ecalBadCalib)
 """
 import os
 import FWCore.ParameterSet.Config as cms
@@ -239,18 +227,8 @@ process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All"
 process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)
 
 
-process.qualityTrackProducer = cms.EDProducer(
-    "QualityTrackProducer",
-    tracks=cms.InputTag("TrackEcalDeadChannelFilter", "ecalTracks"),
-    minPt=cms.double(20.0),
-    minPixelHits=cms.int32(4),
-    maxRelIso=cms.double(0.05),
-    maxDxy=cms.double(0.02),
-    maxDz=cms.double(0.5),
-)
-
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
-    tracks       = cms.InputTag("qualityTrackProducer", "qualityTracks"),
+    tracks       = cms.InputTag("isolatedTracks"),
     met          = cms.InputTag("jecAppliedMetProducer", "CorrectedMet"),
     muons        = cms.InputTag("slimmedMuons"),
     electrons    = cms.InputTag("slimmedElectrons"),
@@ -276,14 +254,10 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
 process.p = cms.Path(
     process.hltFilter *
     process.metFilters *
-    process.ecalBadCalibReducedMINIAODFilter
-#    process.TrackElectronFiducialFilter * # Removed in 2025 since the fiducial maps weren't already created
-#    process.TrackMuonFiducialFilter *
-    # process.TrackEcalDeadChannelFilter *
-    # process.JvmAppliedEventFilter *
-    # process.jecAppliedJetProducer *
-    # process.jecAppliedMetProducer *
-    # process.leptonCollectionsProducer *
-    # process.qualityTrackProducer *
-    # process.ntuplizer
+    process.ecalBadCalibReducedMINIAODFilter*
+    process.TrackEcalDeadChannelFilter *
+    process.JvmAppliedEventFilter *
+    process.jecAppliedJetProducer *
+    process.jecAppliedMetProducer *
+    process.ntuplizer
 )
