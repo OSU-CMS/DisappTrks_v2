@@ -213,7 +213,7 @@ bool TrackEcalDeadChannelFilter::filter(edm::Event& iEvent,
   // Always put the collection so downstream modules can consume unconditionally.
   iEvent.put(std::move(ecalTracks), "ecalTracks");
 
-  return pass;
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
