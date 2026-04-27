@@ -13,7 +13,7 @@
 #include "DataFormats/PatCandidates/interface/MET.h"
 #include "DataFormats/PatCandidates/interface/Muon.h"
 #include "DataFormats/PatCandidates/interface/Tau.h"
-
+#include "DataFormats/VertexReco/interface/Vertex.h"
 // Math utilities
 #include "DataFormats/Math/interface/deltaPhi.h"
 #include "DataFormats/Math/interface/deltaR.h"
@@ -28,6 +28,36 @@
 // ── Branch-group helpers
 // ──────────────────────────────────────────────────────
 namespace {
+
+struct VertexBranches {
+  std::vector<float> x, y, z;
+  std::vector<float> xError, yError, zError;
+  std::vector<float> chi2, normalizedChi2;
+  std::vector<int>   ndof, nTracks;
+  std::vector<bool>  isValid, isFake;
+
+  void book(TTree *t, const std::string &pfx) {
+    t->Branch((pfx + "_x").c_str(),             &x);
+    t->Branch((pfx + "_y").c_str(),             &y);
+    t->Branch((pfx + "_z").c_str(),             &z);
+    t->Branch((pfx + "_xError").c_str(),        &xError);
+    t->Branch((pfx + "_yError").c_str(),        &yError);
+    t->Branch((pfx + "_zError").c_str(),        &zError);
+    t->Branch((pfx + "_chi2").c_str(),          &chi2);
+    t->Branch((pfx + "_normalizedChi2").c_str(),&normalizedChi2);
+    t->Branch((pfx + "_ndof").c_str(),          &ndof);
+    t->Branch((pfx + "_nTracks").c_str(),       &nTracks);
+    t->Branch((pfx + "_isValid").c_str(),       &isValid);
+    t->Branch((pfx + "_isFake").c_str(),        &isFake);
+  }
+  void clear() {
+    x.clear(); y.clear(); z.clear();
+    xError.clear(); yError.clear(); zError.clear();
+    chi2.clear(); normalizedChi2.clear();
+    ndof.clear(); nTracks.clear();
+    isValid.clear(); isFake.clear();
+  }
+};
 
 struct LepKin {
   std::vector<float> pt, eta, phi;
@@ -575,7 +605,9 @@ private:
   edm::EDGetTokenT<std::vector<pat::Muon>> muonToken_;
   edm::EDGetTokenT<std::vector<pat::Electron>> electronToken_;
   edm::EDGetTokenT<std::vector<pat::Jet>> jetToken_;
+  edm::EDGetTokenT<std::vector<pat::Jet>> tightJetToken_;
   edm::EDGetTokenT<std::vector<pat::Tau>> tauToken_;
+  edm::EDGetTokenT<std::vector<reco::Vertex>> vertexToken_;
   edm::EDGetTokenT<std::vector<pat::Muon>> allMuonToken_;
   edm::EDGetTokenT<std::vector<pat::Electron>> allElectronToken_;
   edm::EDGetTokenT<std::vector<pat::Tau>> allTauToken_;
@@ -589,7 +621,8 @@ private:
   TrkBranches trk_;
   LepKin muon_, ele_, tau_;
   LepKinMinimal allMuon_, allEle_, allTau_;
-  JetBranches jet_;
+  JetBranches jet_, tightJet_;
+  VertexBranches vtx_;
 };
 
 // ── Constructor
@@ -605,8 +638,12 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
           iConfig.getParameter<edm::InputTag>("electrons"))),
       jetToken_(consumes<std::vector<pat::Jet>>(
           iConfig.getParameter<edm::InputTag>("jets"))),
+      tightJetToken_(consumes<std::vector<pat::Jet>>(
+          iConfig.getParameter<edm::InputTag>("tightJets"))),
       tauToken_(consumes<std::vector<pat::Tau>>(
           iConfig.getParameter<edm::InputTag>("taus"))),
+      vertexToken_(consumes<std::vector<reco::Vertex>>(
+          iConfig.getParameter<edm::InputTag>("vertices"))),
       allMuonToken_(consumes<std::vector<pat::Muon>>(
           iConfig.getParameter<edm::InputTag>("allMuons"))),
       allElectronToken_(consumes<std::vector<pat::Electron>>(
@@ -630,7 +667,9 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   muon_.book(tree_, "muon");
   ele_.book(tree_, "ele");
   jet_.book(tree_, "jet");
+  tightJet_.book(tree_, "tightJet");
   tau_.book(tree_, "tau");
+  vtx_.book(tree_, "vtx");
   allMuon_.book(tree_, "allMuon");
   allEle_.book(tree_, "allEle");
   allTau_.book(tree_, "allTau");
@@ -648,7 +687,9 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   edm::Handle<std::vector<pat::Muon>> muons;
   edm::Handle<std::vector<pat::Electron>> electrons;
   edm::Handle<std::vector<pat::Jet>> jets;
+  edm::Handle<std::vector<pat::Jet>> tightJets;
   edm::Handle<std::vector<pat::Tau>> taus;
+  edm::Handle<std::vector<reco::Vertex>> vertices;
   edm::Handle<std::vector<pat::Muon>> allMuons;
   edm::Handle<std::vector<pat::Electron>> allElectrons;
   edm::Handle<std::vector<pat::Tau>> allTaus;
@@ -658,7 +699,9 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   iEvent.getByToken(muonToken_, muons);
   iEvent.getByToken(electronToken_, electrons);
   iEvent.getByToken(jetToken_, jets);
+  iEvent.getByToken(tightJetToken_, tightJets);
   iEvent.getByToken(tauToken_, taus);
+  iEvent.getByToken(vertexToken_, vertices);
   iEvent.getByToken(allMuonToken_, allMuons);
   iEvent.getByToken(allElectronToken_, allElectrons);
   iEvent.getByToken(allTauToken_, allTaus);
@@ -682,10 +725,12 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   muon_.clear();
   ele_.clear();
   tau_.clear();
+  vtx_.clear();
   allMuon_.clear();
   allEle_.clear();
   allTau_.clear();
   jet_.clear();
+  tightJet_.clear();
 
   // ── Fill muons ────────────────────────────────────────────────────────────
   for (const auto &mu : *muons) {
@@ -956,14 +1001,56 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
         hp.numberOfValidTECLayersWithMonoAndStereo());
   }
   // ── Fill jets
-  // ─────────────────────────────────────────────────────────────
   for (const auto &jet : *jets) {
     jet_.pt.push_back(jet.pt());
     jet_.eta.push_back(jet.eta());
     jet_.phi.push_back(jet.phi());
     jet_.energy.push_back(jet.energy());
+
+    // Tight Lep Veto ID applied inline
+    const float absEta = std::abs(jet.eta());
+    bool passesTightLepVeto = false;
+
+    if (absEta <= 2.6)
+      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.99
+        && jet.neutralEmEnergyFraction() < 0.9
+        && jet.numberOfDaughters() > 1
+        && jet.muonEnergyFraction() < 0.8
+        && jet.chargedHadronEnergyFraction() > 0.01
+        && jet.chargedMultiplicity() > 0
+        && jet.chargedEmEnergyFraction() < 0.8;
+    else if (absEta <= 2.7)
+      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.9
+        && jet.neutralEmEnergyFraction() < 0.99
+        && jet.muonEnergyFraction() < 0.8
+        && jet.chargedEmEnergyFraction() < 0.8;
+    else if (absEta <= 3.0)
+      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.99;
+    else
+      passesTightLepVeto = jet.neutralEmEnergyFraction() < 0.4
+        && jet.neutralMultiplicity() >= 2;
+
+    tightJet_.pt.push_back(passesTightLepVeto     ? jet.pt()     : -1.f);
+    tightJet_.eta.push_back(passesTightLepVeto    ? jet.eta()    : -99.f);
+    tightJet_.phi.push_back(passesTightLepVeto    ? jet.phi()    : -99.f);
+    tightJet_.energy.push_back(passesTightLepVeto ? jet.energy() : -1.f);
   }
 
+  // ── Fill primary vertices ─────────────────────────────────────────────────
+  for (const auto &pv : *vertices) {
+    vtx_.x.push_back(pv.x());
+    vtx_.y.push_back(pv.y());
+    vtx_.z.push_back(pv.z());
+    vtx_.xError.push_back(pv.xError());
+    vtx_.yError.push_back(pv.yError());
+    vtx_.zError.push_back(pv.zError());
+    vtx_.chi2.push_back(pv.chi2());
+    vtx_.normalizedChi2.push_back(pv.normalizedChi2());
+    vtx_.ndof.push_back(pv.ndof());
+    vtx_.nTracks.push_back(pv.nTracks());
+    vtx_.isValid.push_back(pv.isValid());
+    vtx_.isFake.push_back(pv.isFake());
+  }
   tree_->Fill();
 }
 
