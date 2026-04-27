@@ -7,9 +7,7 @@ jecAppliedMetProducer = cms.EDProducer(
     Jets = cms.PSet(
         srcAK4 = cms.InputTag("slimmedJetsPuppi"),           # pat::JetCollection
         rho    = cms.InputTag("fixedGridRhoFastjetAll"),
-        Year   = cms.string("2024"),
         IsData = cms.bool(True),
-        Era    = cms.string("Era2024All"),
 
         # One of: "Nominal", "JES", "JER"
         SystKind    = cms.string("Nominal"),
