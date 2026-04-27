@@ -26,16 +26,10 @@ import os
 import FWCore.ParameterSet.Config as cms
 from Configuration.AlCa.GlobalTag import GlobalTag
 from FWCore.ParameterSet.VarParsing import VarParsing
+from DisappTrks_v2.BkgdEstimation.EcalBadCalibFilter_cff import addEcalBadCalibFilter
 
 options = VarParsing("analysis")
 
-options.register(
-    "era",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "Data-taking era",
-)
 options.register(
     "electronFiducialMap",
     "",
@@ -51,25 +45,11 @@ options.register(
     "Path to muon fiducial map",
 )
 options.register(
-    "muonTriggerPath",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "HLT path for muon tag (e.g. HLT_IsoMu24_v*)",
-)
-options.register(
     "muonTriggerFilterName",
     "",
     VarParsing.multiplicity.singleton,
     VarParsing.varType.string,
     "Last filter label for muon trigger matching",
-)
-options.register(
-    "electronTriggerPath",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "HLT path for electron tag (e.g. HLT_Ele32_WPTight_Gsf_v*)",
 )
 options.register(
     "electronTriggerFilterName",
@@ -139,11 +119,6 @@ if options.trigger not in triggerPaths:
         f"Choose from: {list(triggerPaths.keys())}"
     )
 
-hltPaths = [p for p in [options.muonTriggerPath, options.electronTriggerPath] if p]
-if not hltPaths:
-    raise RuntimeError(
-        "At least one of muonTriggerPath or electronTriggerPath must be provided."
-    )
 
 processName = "NTuplizer"
 process = cms.Process(processName)
@@ -178,10 +153,11 @@ process.maxEvents = cms.untracked.PSet(input=cms.untracked.int32(options.maxEven
 
 process.TFileService = cms.Service("TFileService", fileName=cms.string("ntuple.root"))
 
+ecalBadCalibFilter = addEcalBadCalibFilter(process, options.year)
+
 process.hltFilter = cms.EDFilter(
     "HLTHighLevel",
     TriggerResultsTag=cms.InputTag("TriggerResults", "", "HLT"),
-    HLTPaths=cms.vstring(*hltPaths),
     eventSetupPathsKey=cms.string(""),
     andOr=cms.bool(True),
     throw=cms.bool(False),
@@ -335,7 +311,8 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
 
 process.p = cms.Path(
     process.hltFilter *
-    process.metFilters
+    process.metFilters *
+    process.ecalBadCalibReducedMINIAODFilter
 #    process.TrackElectronFiducialFilter * # Removed in 2025 since the fiducial maps weren't already created
 #    process.TrackMuonFiducialFilter *
     # process.TrackEcalDeadChannelFilter *
