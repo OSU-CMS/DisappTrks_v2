@@ -30,13 +30,6 @@ from FWCore.ParameterSet.VarParsing import VarParsing
 options = VarParsing('analysis')
 
 options.register(
-    "era",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "Data-taking era"
-)
-options.register(
     "electronFiducialMap",
     "",
     VarParsing.multiplicity.singleton,
@@ -50,7 +43,13 @@ options.register(
     VarParsing.varType.string,
     "Path to muon fiducial map"
 )
-
+options.register(
+    "year",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Year for of data taking (ie. 2024, 2025)"
+)
 options.register(
     "trigger",
     "",
@@ -65,9 +64,8 @@ def require(name, value):
         raise RuntimeError(f"Required argument '{name}' was not provided.\n"
                            f"Usage: cmsRun cfg.py {name}=<value>")
 
-require("era",                 options.era)
-require("electronFiducialMap", options.electronFiducialMap)
-require("muonFiducialMap",     options.muonFiducialMap)
+#require("electronFiducialMap", options.electronFiducialMap)
+#require("muonFiducialMap",     options.muonFiducialMap)
 require("trigger", options.trigger)
 
 # Define trigger sets
@@ -114,7 +112,9 @@ process.CaloGeometryBuilder.SelectedCalos = [
     "HCAL", "ZDC", "EcalBarrel", "EcalEndcap", "EcalPreshower", "TOWER",
 ]
 
-data_global_tag = '150X_dataRun3_v2'
+# 2025: 150X_dataRun3_Prompt_v1
+# 2024: 150X_dataRun3_v2
+data_global_tag = '150X_dataRun3_Prompt_v1'
 mc_global_tag   = '150X_mcRun3_2024_realistic_v2'
 MC = False
 process.GlobalTag = GlobalTag(process.GlobalTag,
@@ -141,7 +141,7 @@ process.hltFilter = cms.EDFilter("HLTHighLevel",
 )
 
 process.metFilters = cms.EDFilter("HLTHighLevel",
-    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "PAT"),
+    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "RECO"), # Should be RECO for 2025 and PAT for 2024
     eventSetupPathsKey = cms.string(""),
     andOr              = cms.bool(False),   # AND — must pass all filters
     throw              = cms.bool(False),
@@ -193,7 +193,9 @@ process.TrackMuonFiducialFilter = cms.EDFilter("TrackFiducialFilter",
 # Consumes: ("TrackMuonFiducialFilter", "fiducialTracks")
 # Produces: ("TrackEcalDeadChannelFilter", "ecalTracks")
 process.TrackEcalDeadChannelFilter = cms.EDFilter("TrackEcalDeadChannelFilter",
-    tracks                           = cms.InputTag("TrackMuonFiducialFilter:fiducialTracks"),
+    # Value for 2024 where fiducial maps are available
+    #tracks                           = cms.InputTag("TrackMuonFiducialFilter:fiducialTracks"),
+    tracks                           = cms.InputTag("isolatedTracks"),
     maskedEcalChannelStatusThreshold = cms.int32(3),
     minDeltaR                        = cms.double(0.05),
 )
@@ -202,6 +204,16 @@ process.load('DisappTrks_v2.BkgdEstimation.JecAppliedJetProducer_cfi')
 process.load('DisappTrks_v2.BkgdEstimation.JecAppliedMetProducer_cfi')
 process.load('DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi')
 
+process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)
+process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
+#process.jecAppliedMetProducer.Jets.Era = cms.string("Era2022C") # Does only work for 2024 & 25 data
+process.jecAppliedJetProducer.Jets.Year = cms.string(options.year)
+process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All")
+#process.jecAppliedJetProducer.Jets.Era = cms.string("Era2022C")
+process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)
+
+
+# Does something like this exist?
 process.tightLepVetoJets = cms.EDFilter("PATJetSelector",
     src = cms.InputTag("jecAppliedJetProducer", "CorrectedAK4"),
     cut = cms.string(
@@ -269,14 +281,14 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
 
 process.p = cms.Path(
     process.hltFilter *
-    process.metFilters *
-    process.TrackElectronFiducialFilter *
-    process.TrackMuonFiducialFilter *
-    process.TrackEcalDeadChannelFilter *
-    process.JvmAppliedEventFilter *
-    process.jecAppliedJetProducer *
-    process.jecAppliedMetProducer *
-    process.leptonCollectionsProducer *
-    process.qualityTrackProducer *
-    process.ntuplizer
+    process.metFilters
+#    process.TrackElectronFiducialFilter * # Removed in 2025 since the fiducial maps weren't already created
+#    process.TrackMuonFiducialFilter *
+    # process.TrackEcalDeadChannelFilter *
+    # process.JvmAppliedEventFilter *
+    # process.jecAppliedJetProducer *
+    # process.jecAppliedMetProducer *
+    # process.leptonCollectionsProducer *
+    # process.qualityTrackProducer *
+    # process.ntuplizer
 )
