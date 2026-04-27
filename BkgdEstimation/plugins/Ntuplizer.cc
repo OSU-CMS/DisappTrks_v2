@@ -68,40 +68,23 @@ struct VertexBranches {
 
 struct LepKin {
   std::vector<float> pt, eta, phi;
-  std::vector<int> charge;
-  std::vector<bool> isTrigMatched;
+  std::vector<int>   charge;
+  std::vector<bool>  isTrigMatched;
+  std::vector<bool>  isTight;          // isTightMuon / cutBased tight ele / tau ID combo
+  std::vector<float> pfRelIso04_dBeta; // Δβ-corrected rel. PF iso (muons); -1 for others
 
   void book(TTree *t, const std::string &pfx) {
-    t->Branch((pfx + "_pt").c_str(), &pt);
-    t->Branch((pfx + "_eta").c_str(), &eta);
-    t->Branch((pfx + "_phi").c_str(), &phi);
-    t->Branch((pfx + "_charge").c_str(), &charge);
-    t->Branch((pfx + "_isTrigMatched").c_str(), &isTrigMatched);
+    t->Branch((pfx + "_pt").c_str(),             &pt);
+    t->Branch((pfx + "_eta").c_str(),            &eta);
+    t->Branch((pfx + "_phi").c_str(),            &phi);
+    t->Branch((pfx + "_charge").c_str(),         &charge);
+    t->Branch((pfx + "_isTrigMatched").c_str(),  &isTrigMatched);
+    t->Branch((pfx + "_isTight").c_str(),        &isTight);
+    t->Branch((pfx + "_pfRelIso04_dBeta").c_str(), &pfRelIso04_dBeta);
   }
   void clear() {
-    pt.clear();
-    eta.clear();
-    phi.clear();
-    charge.clear();
-    isTrigMatched.clear();
-  }
-};
-
-struct LepKinMinimal {
-  std::vector<float> pt, eta, phi;
-  std::vector<int> charge;
-
-  void book(TTree *t, const std::string &pfx) {
-    t->Branch((pfx + "_pt").c_str(), &pt);
-    t->Branch((pfx + "_eta").c_str(), &eta);
-    t->Branch((pfx + "_phi").c_str(), &phi);
-    t->Branch((pfx + "_charge").c_str(), &charge);
-  }
-  void clear() {
-    pt.clear();
-    eta.clear();
-    phi.clear();
-    charge.clear();
+    pt.clear(); eta.clear(); phi.clear(); charge.clear();
+    isTrigMatched.clear(); isTight.clear(); pfRelIso04_dBeta.clear();
   }
 };
 
@@ -605,20 +588,33 @@ struct TrkBranches {
 
 struct JetBranches {
   std::vector<float> pt, eta, phi, energy;
+  std::vector<bool>  isTightLepVeto;
 
   void book(TTree *t, const std::string &pfx) {
-    t->Branch((pfx + "_pt").c_str(), &pt);
-    t->Branch((pfx + "_eta").c_str(), &eta);
-    t->Branch((pfx + "_phi").c_str(), &phi);
-    t->Branch((pfx + "_energy").c_str(), &energy);
+    t->Branch((pfx + "_pt").c_str(),            &pt);
+    t->Branch((pfx + "_eta").c_str(),           &eta);
+    t->Branch((pfx + "_phi").c_str(),           &phi);
+    t->Branch((pfx + "_energy").c_str(),        &energy);
+    t->Branch((pfx + "_isTightLepVeto").c_str(), &isTightLepVeto);
   }
   void clear() {
-    pt.clear();
-    eta.clear();
-    phi.clear();
-    energy.clear();
+    pt.clear(); eta.clear(); phi.clear(); energy.clear();
+    isTightLepVeto.clear();
   }
 };
+
+// ── Tau ID helper ─────────────────────────────────────────────────────────────
+static bool tauPassesId(const pat::Tau &tau,
+                        const std::string &vsJet,
+                        const std::string &vsEle,
+                        const std::string &vsMu) {
+  auto check = [&tau](const std::string &label) -> bool {
+    if (label.empty()) return true;
+    if (!tau.isTauIDAvailable(label)) return false;
+    return tau.tauID(label) > 0.5f;
+  };
+  return check(vsJet) && check(vsEle) && check(vsMu);
+}
 
 // ── Hit-drop helper ───────────────────────────────────────────────────────────
 // Mirrors osu::TrackBase::hitDrop_missingMiddleHits(): counts tracker layers
@@ -659,12 +655,8 @@ private:
   edm::EDGetTokenT<std::vector<pat::Muon>> muonToken_;
   edm::EDGetTokenT<std::vector<pat::Electron>> electronToken_;
   edm::EDGetTokenT<std::vector<pat::Jet>> jetToken_;
-  edm::EDGetTokenT<std::vector<pat::Jet>> tightJetToken_;
   edm::EDGetTokenT<std::vector<pat::Tau>> tauToken_;
   edm::EDGetTokenT<std::vector<reco::Vertex>> vertexToken_;
-  edm::EDGetTokenT<std::vector<pat::Muon>> allMuonToken_;
-  edm::EDGetTokenT<std::vector<pat::Electron>> allElectronToken_;
-  edm::EDGetTokenT<std::vector<pat::Tau>> allTauToken_;
   edm::EDGetTokenT<edm::TriggerResults> triggerResultsToken_;
   edm::EDGetTokenT<pat::TriggerObjectStandAloneCollection> triggerObjectsToken_;
   edm::EDGetTokenT<double> rhoAllToken_;
@@ -672,6 +664,10 @@ private:
   edm::EDGetTokenT<double> rhoCentralCaloToken_;
   std::string muonTriggerFilterName_;
   std::string electronTriggerFilterName_;
+  std::string electronIdLabel_;
+  std::string tauVsJetLabel_;
+  std::string tauVsEleLabel_;
+  std::string tauVsMuLabel_;
   float triggerMatchingDR_;
   float hitInefficiency_;
   std::mt19937 rng_;
@@ -685,8 +681,7 @@ private:
 
   TrkBranches trk_;
   LepKin muon_, ele_, tau_;
-  LepKinMinimal allMuon_, allEle_, allTau_;
-  JetBranches jet_, tightJet_;
+  JetBranches jet_;
   VertexBranches vtx_;
 };
 
@@ -703,18 +698,10 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
           iConfig.getParameter<edm::InputTag>("electrons"))),
       jetToken_(consumes<std::vector<pat::Jet>>(
           iConfig.getParameter<edm::InputTag>("jets"))),
-      tightJetToken_(consumes<std::vector<pat::Jet>>(
-          iConfig.getParameter<edm::InputTag>("tightJets"))),
       tauToken_(consumes<std::vector<pat::Tau>>(
           iConfig.getParameter<edm::InputTag>("taus"))),
       vertexToken_(consumes<std::vector<reco::Vertex>>(
           iConfig.getParameter<edm::InputTag>("vertices"))),
-      allMuonToken_(consumes<std::vector<pat::Muon>>(
-          iConfig.getParameter<edm::InputTag>("allMuons"))),
-      allElectronToken_(consumes<std::vector<pat::Electron>>(
-          iConfig.getParameter<edm::InputTag>("allElectrons"))),
-      allTauToken_(consumes<std::vector<pat::Tau>>(
-          iConfig.getParameter<edm::InputTag>("allTaus"))),
       triggerResultsToken_(consumes<edm::TriggerResults>(
           iConfig.getParameter<edm::InputTag>("triggerResults"))),
       triggerObjectsToken_(consumes<pat::TriggerObjectStandAloneCollection>(
@@ -724,6 +711,10 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
       rhoCentralCaloToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoCentralCalo"))) {
   muonTriggerFilterName_     = iConfig.getParameter<std::string>("muonTriggerFilterName");
   electronTriggerFilterName_ = iConfig.getParameter<std::string>("electronTriggerFilterName");
+  electronIdLabel_           = iConfig.getParameter<std::string>("electronIdLabel");
+  tauVsJetLabel_             = iConfig.getParameter<std::string>("tauVsJetLabel");
+  tauVsEleLabel_             = iConfig.getParameter<std::string>("tauVsEleLabel");
+  tauVsMuLabel_              = iConfig.getParameter<std::string>("tauVsMuLabel");
   triggerMatchingDR_         = iConfig.getParameter<double>("triggerMatchingDR");
   hitInefficiency_           = iConfig.getParameter<double>("hitInefficiency");
   usesResource(TFileService::kSharedResource);
@@ -746,12 +737,8 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   muon_.book(tree_, "muon");
   ele_.book(tree_, "ele");
   jet_.book(tree_, "jet");
-  tightJet_.book(tree_, "tightJet");
   tau_.book(tree_, "tau");
   vtx_.book(tree_, "vtx");
-  allMuon_.book(tree_, "allMuon");
-  allEle_.book(tree_, "allEle");
-  allTau_.book(tree_, "allTau");
 }
 
 // ── analyze
@@ -770,12 +757,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   edm::Handle<std::vector<pat::Muon>> muons;
   edm::Handle<std::vector<pat::Electron>> electrons;
   edm::Handle<std::vector<pat::Jet>> jets;
-  edm::Handle<std::vector<pat::Jet>> tightJets;
   edm::Handle<std::vector<pat::Tau>> taus;
   edm::Handle<std::vector<reco::Vertex>> vertices;
-  edm::Handle<std::vector<pat::Muon>> allMuons;
-  edm::Handle<std::vector<pat::Electron>> allElectrons;
-  edm::Handle<std::vector<pat::Tau>> allTaus;
   edm::Handle<edm::TriggerResults> triggerResults;
   edm::Handle<pat::TriggerObjectStandAloneCollection> trigObjs;
   edm::Handle<double> rhoAll, rhoAllCalo, rhoCentralCalo;
@@ -785,12 +768,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   iEvent.getByToken(muonToken_, muons);
   iEvent.getByToken(electronToken_, electrons);
   iEvent.getByToken(jetToken_, jets);
-  iEvent.getByToken(tightJetToken_, tightJets);
   iEvent.getByToken(tauToken_, taus);
   iEvent.getByToken(vertexToken_, vertices);
-  iEvent.getByToken(allMuonToken_, allMuons);
-  iEvent.getByToken(allElectronToken_, allElectrons);
-  iEvent.getByToken(allTauToken_, allTaus);
   iEvent.getByToken(triggerResultsToken_, triggerResults);
   iEvent.getByToken(triggerObjectsToken_, trigObjs);
   iEvent.getByToken(rhoAllToken_,         rhoAll);
@@ -831,11 +810,9 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   ele_.clear();
   tau_.clear();
   vtx_.clear();
-  allMuon_.clear();
-  allEle_.clear();
-  allTau_.clear();
   jet_.clear();
-  tightJet_.clear();
+
+  const reco::Vertex *pv = vertices->empty() ? nullptr : &vertices->front();
 
   // ── Fill muons ────────────────────────────────────────────────────────────
   for (const auto &mu : *muons) {
@@ -847,6 +824,13 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     muon_.eta.push_back(mu.eta());
     muon_.phi.push_back(mu.phi());
     muon_.charge.push_back(mu.charge());
+    muon_.isTight.push_back(pv && mu.isTightMuon(*pv));
+    const auto &iso4 = mu.pfIsolationR04();
+    const float absIso = iso4.sumChargedHadronPt
+                       + std::max(0.f, iso4.sumNeutralHadronEt
+                                       + iso4.sumPhotonEt
+                                       - 0.5f * iso4.sumPUPt);
+    muon_.pfRelIso04_dBeta.push_back(mu.pt() > 0.f ? absIso / mu.pt() : -1.f);
   }
 
   // ── Fill electrons ────────────────────────────────────────────────────────
@@ -859,6 +843,10 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     ele_.eta.push_back(el.eta());
     ele_.phi.push_back(el.phi());
     ele_.charge.push_back(el.charge());
+    const bool isTightEle = el.isElectronIDAvailable(electronIdLabel_)
+                          && el.electronID(electronIdLabel_) > 0.5f;
+    ele_.isTight.push_back(isTightEle);
+    ele_.pfRelIso04_dBeta.push_back(-1.f); // electrons use rho-corrected iso, included in isTight
   }
 
   // ── Fill taus ─────────────────────────────────────────────────────────────
@@ -868,26 +856,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     tau_.eta.push_back(tau.eta());
     tau_.phi.push_back(tau.phi());
     tau_.charge.push_back(tau.charge());
-  }
-
-  // ── Fill all miniAOD leptons (for dR calculations) ───────────────────────
-  for (const auto &mu : *allMuons) {
-    allMuon_.pt.push_back(mu.pt());
-    allMuon_.eta.push_back(mu.eta());
-    allMuon_.phi.push_back(mu.phi());
-    allMuon_.charge.push_back(mu.charge());
-  }
-  for (const auto &el : *allElectrons) {
-    allEle_.pt.push_back(el.pt());
-    allEle_.eta.push_back(el.eta());
-    allEle_.phi.push_back(el.phi());
-    allEle_.charge.push_back(el.charge());
-  }
-  for (const auto &tau : *allTaus) {
-    allTau_.pt.push_back(tau.pt());
-    allTau_.eta.push_back(tau.eta());
-    allTau_.phi.push_back(tau.phi());
-    allTau_.charge.push_back(tau.charge());
+    tau_.isTight.push_back(tauPassesId(tau, tauVsJetLabel_, tauVsEleLabel_, tauVsMuLabel_));
+    tau_.pfRelIso04_dBeta.push_back(-1.f);
   }
 
   // ── Fill tracks ───────────────────────────────────────────────────────────
@@ -1159,10 +1129,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
       passesTightLepVeto = jet.neutralEmEnergyFraction() < 0.4
         && jet.neutralMultiplicity() >= 2;
 
-    tightJet_.pt.push_back(passesTightLepVeto     ? jet.pt()     : -1.f);
-    tightJet_.eta.push_back(passesTightLepVeto    ? jet.eta()    : -99.f);
-    tightJet_.phi.push_back(passesTightLepVeto    ? jet.phi()    : -99.f);
-    tightJet_.energy.push_back(passesTightLepVeto ? jet.energy() : -1.f);
+    jet_.isTightLepVeto.push_back(passesTightLepVeto);
   }
 
   // ── Fill primary vertices ─────────────────────────────────────────────────

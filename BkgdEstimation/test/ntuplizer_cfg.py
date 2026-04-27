@@ -239,49 +239,6 @@ process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All"
 process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)
 
 
-# Does something like this exist?
-process.tightLepVetoJets = cms.EDFilter("PATJetSelector",
-    src = cms.InputTag("jecAppliedJetProducer", "CorrectedAK4"),
-    cut = cms.string(
-        # Central region |eta| <= 2.6
-        "(abs(eta) <= 2.6"
-        " && neutralHadronEnergyFraction < 0.99"
-        " && neutralEmEnergyFraction < 0.9"
-        " && numberOfDaughters > 1"
-        " && muonEnergyFraction < 0.8"
-        " && chargedHadronEnergyFraction > 0.01"
-        " && chargedMultiplicity > 0"
-        " && chargedEmEnergyFraction < 0.8)"
-        # Transition region 2.6 < |eta| <= 2.7
-        " || (abs(eta) > 2.6 && abs(eta) <= 2.7"
-        " && neutralHadronEnergyFraction < 0.9"
-        " && neutralEmEnergyFraction < 0.99"
-        " && muonEnergyFraction < 0.8"
-        " && chargedEmEnergyFraction < 0.8)"
-        # Forward region 2.7 < |eta| <= 3.0
-        " || (abs(eta) > 2.7 && abs(eta) <= 3.0"
-        " && neutralHadronEnergyFraction < 0.99)"
-        # Very forward region |eta| > 3.0
-        " || (abs(eta) > 3.0"
-        " && neutralEmEnergyFraction < 0.4"
-        " && neutralMultiplicity >= 2)"
-    )
-)
-
-process.leptonCollectionsProducer = cms.EDProducer(
-    "LeptonCollectionsProducer",
-    electrons=cms.InputTag("slimmedElectrons"),
-    muons=cms.InputTag("slimmedMuons"),
-    taus=cms.InputTag("slimmedTaus"),
-    vertices=cms.InputTag("offlineSlimmedPrimaryVertices"),
-    minPt=cms.double(20.0),
-    maxEta=cms.double(2.1),
-    electronIdLabel=cms.string("cutBasedElectronID-RunIIIWinter22-V1-tight"),
-    tauVsJetLabel=cms.string(""),
-    tauVsEleLabel=cms.string("byTightDeepTau2018v2p5VSe"),
-    tauVsMuLabel=cms.string("byTightDeepTau2018v2p5VSmu"),
-)
-
 process.qualityTrackProducer = cms.EDProducer(
     "QualityTrackProducer",
     tracks=cms.InputTag("TrackEcalDeadChannelFilter", "ecalTracks"),
@@ -293,25 +250,27 @@ process.qualityTrackProducer = cms.EDProducer(
 )
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
-    tracks       = cms.InputTag("qualityTrackProducer",      "qualityTracks"),
-    met          = cms.InputTag("jecAppliedMetProducer",     "CorrectedMet"),
-    muons        = cms.InputTag("leptonCollectionsProducer", "qualityMuons"),
-    electrons    = cms.InputTag("leptonCollectionsProducer", "qualityElectrons"),
+    tracks       = cms.InputTag("qualityTrackProducer", "qualityTracks"),
+    met          = cms.InputTag("jecAppliedMetProducer", "CorrectedMet"),
+    muons        = cms.InputTag("slimmedMuons"),
+    electrons    = cms.InputTag("slimmedElectrons"),
+    taus         = cms.InputTag("slimmedTaus"),
     vertices     = cms.InputTag("offlineSlimmedPrimaryVertices"),
-    jets         = cms.InputTag("jecAppliedJetProducer",     "CorrectedAK4"),
-    tightJets    = cms.InputTag("tightLepVetoJets"),
-    taus         = cms.InputTag("leptonCollectionsProducer", "qualityTaus"),
-    allMuons     = cms.InputTag("slimmedMuons"),
-    allElectrons = cms.InputTag("slimmedElectrons"),
-    allTaus      = cms.InputTag("slimmedTaus"),
+    jets         = cms.InputTag("jecAppliedJetProducer", "CorrectedAK4"),
     treeName     = cms.string("Events"),
-    triggerResults=cms.InputTag("TriggerResults", "", "HLT"),
-    triggerObjects=cms.InputTag("slimmedPatTrigger"),
-    triggerMatchingDR=cms.double(0.3),
-    hitInefficiency=cms.double(0.0),   # 0 for data; set non-zero for MC hit-drop correction
-    rhoAll         =cms.InputTag("fixedGridRhoFastjetAll"),
-    rhoAllCalo     =cms.InputTag("fixedGridRhoFastjetAllCalo"),
-    rhoCentralCalo =cms.InputTag("fixedGridRhoFastjetCentralCalo"),
+    triggerResults       = cms.InputTag("TriggerResults", "", "HLT"),
+    triggerObjects       = cms.InputTag("slimmedPatTrigger"),
+    muonTriggerFilterName     = cms.string(options.muonTriggerFilterName),
+    electronTriggerFilterName = cms.string(options.electronTriggerFilterName),
+    triggerMatchingDR    = cms.double(0.3),
+    hitInefficiency      = cms.double(0.0),
+    electronIdLabel      = cms.string("cutBasedElectronID-RunIIIWinter22-V1-tight"),
+    tauVsJetLabel        = cms.string(""),
+    tauVsEleLabel        = cms.string("byTightDeepTau2018v2p5VSe"),
+    tauVsMuLabel         = cms.string("byTightDeepTau2018v2p5VSmu"),
+    rhoAll               = cms.InputTag("fixedGridRhoFastjetAll"),
+    rhoAllCalo           = cms.InputTag("fixedGridRhoFastjetAllCalo"),
+    rhoCentralCalo       = cms.InputTag("fixedGridRhoFastjetCentralCalo"),
 )
 
 process.p = cms.Path(
