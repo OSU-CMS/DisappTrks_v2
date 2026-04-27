@@ -84,6 +84,7 @@ void LeptonCollectionsProducer::produce(edm::Event& iEvent, const edm::EventSetu
         if (mu.pt() <= minPt_) continue;
         if (std::abs(mu.eta()) >= maxEta_) continue;
         if (!pv || !mu.isTightMuon(*pv)) continue;
+        if (!mu.passed(reco::Muon::PFIsoTight)) continue;  // add this line
         qualityMuons->push_back(mu);
     }
 
