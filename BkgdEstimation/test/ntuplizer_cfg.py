@@ -27,21 +27,56 @@ import FWCore.ParameterSet.Config as cms
 from Configuration.AlCa.GlobalTag import GlobalTag
 from FWCore.ParameterSet.VarParsing import VarParsing
 
-options = VarParsing('analysis')
+options = VarParsing("analysis")
 
+options.register(
+    "era",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Data-taking era",
+)
 options.register(
     "electronFiducialMap",
     "",
     VarParsing.multiplicity.singleton,
     VarParsing.varType.string,
-    "Path to electron fiducial map"
+    "Path to electron fiducial map",
 )
 options.register(
     "muonFiducialMap",
     "",
     VarParsing.multiplicity.singleton,
     VarParsing.varType.string,
-    "Path to muon fiducial map"
+    "Path to muon fiducial map",
+)
+options.register(
+    "muonTriggerPath",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "HLT path for muon tag (e.g. HLT_IsoMu24_v*)",
+)
+options.register(
+    "muonTriggerFilterName",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Last filter label for muon trigger matching",
+)
+options.register(
+    "electronTriggerPath",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "HLT path for electron tag (e.g. HLT_Ele32_WPTight_Gsf_v*)",
+)
+options.register(
+    "electronTriggerFilterName",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Last filter label for electron trigger matching",
 )
 options.register(
     "year",
@@ -55,14 +90,17 @@ options.register(
     "",
     VarParsing.multiplicity.singleton,
     VarParsing.varType.string,
-    "Trigger selection: 'MET', 'SingleElectron', or 'SingleMuon'"
+    "Trigger selection: 'MET', 'SingleElectron', or 'SingleMuon'",
 )
 options.parseArguments()
 
+
 def require(name, value):
     if not value:
-        raise RuntimeError(f"Required argument '{name}' was not provided.\n"
-                           f"Usage: cmsRun cfg.py {name}=<value>")
+        raise RuntimeError(
+            f"Required argument '{name}' was not provided.\n"
+            f"Usage: cmsRun cfg.py {name}=<value>"
+        )
 
 #require("electronFiducialMap", options.electronFiducialMap)
 #require("muonFiducialMap",     options.muonFiducialMap)
@@ -96,20 +134,31 @@ triggerPaths = {
 }
 
 if options.trigger not in triggerPaths:
-    raise RuntimeError(f"Unknown trigger '{options.trigger}'. "
-                       f"Choose from: {list(triggerPaths.keys())}")
+    raise RuntimeError(
+        f"Unknown trigger '{options.trigger}'. "
+        f"Choose from: {list(triggerPaths.keys())}"
+    )
+
+hltPaths = [p for p in [options.muonTriggerPath, options.electronTriggerPath] if p]
+if not hltPaths:
+    raise RuntimeError(
+        "At least one of muonTriggerPath or electronTriggerPath must be provided."
+    )
 
 processName = "NTuplizer"
 process = cms.Process(processName)
-process.options = cms.untracked.PSet(
-    wantSummary = cms.untracked.bool(True)
-)
+process.options = cms.untracked.PSet(wantSummary=cms.untracked.bool(True))
 
-process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
+process.load("Configuration.StandardSequences.FrontierConditions_GlobalTag_cff")
 process.load("Configuration.StandardSequences.GeometryDB_cff")
 process.load("Configuration.StandardSequences.MagneticField_AutoFromDBCurrent_cff")
 process.CaloGeometryBuilder.SelectedCalos = [
-    "HCAL", "ZDC", "EcalBarrel", "EcalEndcap", "EcalPreshower", "TOWER",
+    "HCAL",
+    "ZDC",
+    "EcalBarrel",
+    "EcalEndcap",
+    "EcalPreshower",
+    "TOWER",
 ]
 
 # 2025: 150X_dataRun3_Prompt_v1
@@ -117,27 +166,26 @@ process.CaloGeometryBuilder.SelectedCalos = [
 data_global_tag = '150X_dataRun3_Prompt_v1'
 mc_global_tag   = '150X_mcRun3_2024_realistic_v2'
 MC = False
-process.GlobalTag = GlobalTag(process.GlobalTag,
-                              mc_global_tag if MC else data_global_tag, '')
-
-process.source = cms.Source("PoolSource",
-    fileNames = cms.untracked.vstring(
-        options.inputFiles
-    )
+process.GlobalTag = GlobalTag(
+    process.GlobalTag, mc_global_tag if MC else data_global_tag, ""
 )
 
-process.maxEvents = cms.untracked.PSet(input = cms.untracked.int32(options.maxEvents))
-
-process.TFileService = cms.Service("TFileService",
-    fileName = cms.string("ntuple.root")
+process.source = cms.Source(
+    "PoolSource", fileNames=cms.untracked.vstring(options.inputFiles)
 )
 
-process.hltFilter = cms.EDFilter("HLTHighLevel",
-    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "HLT"),
-    eventSetupPathsKey = cms.string(""),
-    andOr              = cms.bool(True),
-    throw              = cms.bool(False),
-    HLTPaths           = triggerPaths[options.trigger],
+process.maxEvents = cms.untracked.PSet(input=cms.untracked.int32(options.maxEvents))
+
+process.TFileService = cms.Service("TFileService", fileName=cms.string("ntuple.root"))
+
+process.hltFilter = cms.EDFilter(
+    "HLTHighLevel",
+    TriggerResultsTag=cms.InputTag("TriggerResults", "", "HLT"),
+    HLTPaths=cms.vstring(*hltPaths),
+    eventSetupPathsKey=cms.string(""),
+    andOr=cms.bool(True),
+    throw=cms.bool(False),
+    HLTPaths=triggerPaths[options.trigger],
 )
 
 process.metFilters = cms.EDFilter("HLTHighLevel",
@@ -160,15 +208,16 @@ process.metFilters = cms.EDFilter("HLTHighLevel",
 # ── TrackElectronFiducialFilter ───────────────────────────────────────────────
 # Consumes: ("ZtoProbeTrkTrackSelections", "probeTracks")
 # Produces: ("TrackElectronFiducialFilter", "fiducialTracks")
-process.TrackElectronFiducialFilter = cms.EDFilter("TrackFiducialFilter",
-    tracks = cms.InputTag("isolatedTracks"),
-    useEraByEraFiducialMaps = cms.bool(False),
-    fiducialMaps = cms.VPSet(
+process.TrackElectronFiducialFilter = cms.EDFilter(
+    "TrackFiducialFilter",
+    tracks=cms.InputTag("isolatedTracks"),
+    useEraByEraFiducialMaps=cms.bool(False),
+    fiducialMaps=cms.VPSet(
         cms.PSet(
-            histFile           = cms.FileInPath(options.electronFiducialMap),
-            beforeVetoHistName = cms.string("beforeVeto"),
-            afterVetoHistName  = cms.string("afterVeto"),
-            thresholdForVeto   = cms.double(2.0),
+            histFile=cms.FileInPath(options.electronFiducialMap),
+            beforeVetoHistName=cms.string("beforeVeto"),
+            afterVetoHistName=cms.string("afterVeto"),
+            thresholdForVeto=cms.double(2.0),
         ),
     ),
 )
@@ -176,15 +225,16 @@ process.TrackElectronFiducialFilter = cms.EDFilter("TrackFiducialFilter",
 # ── TrackMuonFiducialFilter ───────────────────────────────────────────────────
 # Consumes: ("TrackElectronFiducialFilter", "fiducialTracks")
 # Produces: ("TrackMuonFiducialFilter", "fiducialTracks")
-process.TrackMuonFiducialFilter = cms.EDFilter("TrackFiducialFilter",
-    tracks = cms.InputTag("TrackElectronFiducialFilter:fiducialTracks"),
-    useEraByEraFiducialMaps = cms.bool(False),
-    fiducialMaps = cms.VPSet(
+process.TrackMuonFiducialFilter = cms.EDFilter(
+    "TrackFiducialFilter",
+    tracks=cms.InputTag("TrackElectronFiducialFilter:fiducialTracks"),
+    useEraByEraFiducialMaps=cms.bool(False),
+    fiducialMaps=cms.VPSet(
         cms.PSet(
-            histFile           = cms.FileInPath(options.muonFiducialMap),
-            beforeVetoHistName = cms.string("beforeVeto"),
-            afterVetoHistName  = cms.string("afterVeto"),
-            thresholdForVeto   = cms.double(2.0),
+            histFile=cms.FileInPath(options.muonFiducialMap),
+            beforeVetoHistName=cms.string("beforeVeto"),
+            afterVetoHistName=cms.string("afterVeto"),
+            thresholdForVeto=cms.double(2.0),
         ),
     ),
 )
@@ -200,9 +250,9 @@ process.TrackEcalDeadChannelFilter = cms.EDFilter("TrackEcalDeadChannelFilter",
     minDeltaR                        = cms.double(0.05),
 )
 
-process.load('DisappTrks_v2.BkgdEstimation.JecAppliedJetProducer_cfi')
-process.load('DisappTrks_v2.BkgdEstimation.JecAppliedMetProducer_cfi')
-process.load('DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi')
+process.load("DisappTrks_v2.BkgdEstimation.JecAppliedJetProducer_cfi")
+process.load("DisappTrks_v2.BkgdEstimation.JecAppliedMetProducer_cfi")
+process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 
 process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)
 process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
@@ -242,26 +292,28 @@ process.tightLepVetoJets = cms.EDFilter("PATJetSelector",
     )
 )
 
-process.leptonCollectionsProducer = cms.EDProducer("LeptonCollectionsProducer",
-    electrons       = cms.InputTag("slimmedElectrons"),
-    muons           = cms.InputTag("slimmedMuons"),
-    taus            = cms.InputTag("slimmedTaus"),
-    vertices        = cms.InputTag("offlineSlimmedPrimaryVertices"),
-    minPt           = cms.double(20.0),
-    maxEta          = cms.double(2.1),
-    electronIdLabel = cms.string("cutBasedElectronID-RunIIIWinter22-V1-tight"),
-    tauVsJetLabel   = cms.string(""),
-    tauVsEleLabel   = cms.string("byTightDeepTau2018v2p5VSe"),
-    tauVsMuLabel    = cms.string("byTightDeepTau2018v2p5VSmu"),
+process.leptonCollectionsProducer = cms.EDProducer(
+    "LeptonCollectionsProducer",
+    electrons=cms.InputTag("slimmedElectrons"),
+    muons=cms.InputTag("slimmedMuons"),
+    taus=cms.InputTag("slimmedTaus"),
+    vertices=cms.InputTag("offlineSlimmedPrimaryVertices"),
+    minPt=cms.double(20.0),
+    maxEta=cms.double(2.1),
+    electronIdLabel=cms.string("cutBasedElectronID-RunIIIWinter22-V1-tight"),
+    tauVsJetLabel=cms.string(""),
+    tauVsEleLabel=cms.string("byTightDeepTau2018v2p5VSe"),
+    tauVsMuLabel=cms.string("byTightDeepTau2018v2p5VSmu"),
 )
 
-process.qualityTrackProducer = cms.EDProducer("QualityTrackProducer",
-    tracks       = cms.InputTag("TrackEcalDeadChannelFilter", "ecalTracks"),
-    minPt        = cms.double(20.0),
-    minPixelHits = cms.int32(4),
-    maxRelIso    = cms.double(0.05),
-    maxDxy       = cms.double(0.02),
-    maxDz        = cms.double(0.5),
+process.qualityTrackProducer = cms.EDProducer(
+    "QualityTrackProducer",
+    tracks=cms.InputTag("TrackEcalDeadChannelFilter", "ecalTracks"),
+    minPt=cms.double(20.0),
+    minPixelHits=cms.int32(4),
+    maxRelIso=cms.double(0.05),
+    maxDxy=cms.double(0.02),
+    maxDz=cms.double(0.5),
 )
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
@@ -277,7 +329,9 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     allElectrons = cms.InputTag("slimmedElectrons"),
     allTaus      = cms.InputTag("slimmedTaus"),
     treeName     = cms.string("Events"),
-)
+    triggerResults=cms.InputTag("TriggerResults", "", "HLT"),
+    triggerObjects=cms.InputTag("slimmedPatTrigger"),
+    triggerMatchingDR=cms.double(0.3))
 
 process.p = cms.Path(
     process.hltFilter *
