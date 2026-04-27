@@ -13,6 +13,11 @@
 #include "DataFormats/PatCandidates/interface/MET.h"
 #include "DataFormats/PatCandidates/interface/Muon.h"
 #include "DataFormats/PatCandidates/interface/Tau.h"
+#include "DataFormats/PatCandidates/interface/TriggerObjectStandAlone.h"
+
+// Trigger
+#include "DataFormats/Common/interface/TriggerResults.h"
+#include "FWCore/Common/interface/TriggerNames.h"
 
 // Math utilities
 #include "DataFormats/Math/interface/deltaPhi.h"
@@ -32,18 +37,21 @@ namespace {
 struct LepKin {
   std::vector<float> pt, eta, phi;
   std::vector<int> charge;
+  std::vector<bool> isTrigMatched;
 
   void book(TTree *t, const std::string &pfx) {
     t->Branch((pfx + "_pt").c_str(), &pt);
     t->Branch((pfx + "_eta").c_str(), &eta);
     t->Branch((pfx + "_phi").c_str(), &phi);
     t->Branch((pfx + "_charge").c_str(), &charge);
+    t->Branch((pfx + "_isTrigMatched").c_str(), &isTrigMatched);
   }
   void clear() {
     pt.clear();
     eta.clear();
     phi.clear();
     charge.clear();
+    isTrigMatched.clear();
   }
 };
 
@@ -579,6 +587,11 @@ private:
   edm::EDGetTokenT<std::vector<pat::Muon>> allMuonToken_;
   edm::EDGetTokenT<std::vector<pat::Electron>> allElectronToken_;
   edm::EDGetTokenT<std::vector<pat::Tau>> allTauToken_;
+  edm::EDGetTokenT<edm::TriggerResults> triggerResultsToken_;
+  edm::EDGetTokenT<pat::TriggerObjectStandAloneCollection> triggerObjectsToken_;
+  std::string muonTriggerFilterName_;
+  std::string electronTriggerFilterName_;
+  float triggerMatchingDR_;
 
   TTree *tree_;
 
@@ -612,7 +625,14 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
       allElectronToken_(consumes<std::vector<pat::Electron>>(
           iConfig.getParameter<edm::InputTag>("allElectrons"))),
       allTauToken_(consumes<std::vector<pat::Tau>>(
-          iConfig.getParameter<edm::InputTag>("allTaus"))) {
+          iConfig.getParameter<edm::InputTag>("allTaus"))),
+      triggerResultsToken_(consumes<edm::TriggerResults>(
+          iConfig.getParameter<edm::InputTag>("triggerResults"))),
+      triggerObjectsToken_(consumes<pat::TriggerObjectStandAloneCollection>(
+          iConfig.getParameter<edm::InputTag>("triggerObjects"))) {
+  muonTriggerFilterName_     = iConfig.getParameter<std::string>("muonTriggerFilterName");
+  electronTriggerFilterName_ = iConfig.getParameter<std::string>("electronTriggerFilterName");
+  triggerMatchingDR_         = iConfig.getParameter<double>("triggerMatchingDR");
   usesResource(TFileService::kSharedResource);
   edm::Service<TFileService> fs;
   tree_ = fs->make<TTree>(iConfig.getParameter<std::string>("treeName").c_str(),
@@ -652,6 +672,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   edm::Handle<std::vector<pat::Muon>> allMuons;
   edm::Handle<std::vector<pat::Electron>> allElectrons;
   edm::Handle<std::vector<pat::Tau>> allTaus;
+  edm::Handle<edm::TriggerResults> triggerResults;
+  edm::Handle<pat::TriggerObjectStandAloneCollection> trigObjs;
 
   iEvent.getByToken(trackToken_, tracks);
   iEvent.getByToken(metToken_, mets);
@@ -662,6 +684,19 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   iEvent.getByToken(allMuonToken_, allMuons);
   iEvent.getByToken(allElectronToken_, allElectrons);
   iEvent.getByToken(allTauToken_, allTaus);
+  iEvent.getByToken(triggerResultsToken_, triggerResults);
+  iEvent.getByToken(triggerObjectsToken_, trigObjs);
+
+  // Collect (eta, phi) of trigger objects for muon and electron tag filters — unpack once.
+  std::vector<std::pair<float, float>> muonTrigObjsEtaPhi;
+  std::vector<std::pair<float, float>> eleTrigObjsEtaPhi;
+  for (auto obj : *trigObjs) {  // intentional copy: unpackNamesAndLabels mutates
+    obj.unpackNamesAndLabels(iEvent, *triggerResults);
+    if (!muonTriggerFilterName_.empty() && obj.hasFilterLabel(muonTriggerFilterName_))
+      muonTrigObjsEtaPhi.emplace_back(obj.eta(), obj.phi());
+    if (!electronTriggerFilterName_.empty() && obj.hasFilterLabel(electronTriggerFilterName_))
+      eleTrigObjsEtaPhi.emplace_back(obj.eta(), obj.phi());
+  }
 
   // ── MET and MET^{no mu} ───────────────────────────────────────────────────
   const pat::MET &met = mets->at(0);
@@ -689,6 +724,10 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
 
   // ── Fill muons ────────────────────────────────────────────────────────────
   for (const auto &mu : *muons) {
+    float minDR = 999.f;
+    for (const auto &[tEta, tPhi] : muonTrigObjsEtaPhi)
+      minDR = std::min(minDR, (float)reco::deltaR(mu.eta(), mu.phi(), tEta, tPhi));
+    muon_.isTrigMatched.push_back(minDR < triggerMatchingDR_);
     muon_.pt.push_back(mu.pt());
     muon_.eta.push_back(mu.eta());
     muon_.phi.push_back(mu.phi());
@@ -697,6 +736,10 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
 
   // ── Fill electrons ────────────────────────────────────────────────────────
   for (const auto &el : *electrons) {
+    float minDR = 999.f;
+    for (const auto &[tEta, tPhi] : eleTrigObjsEtaPhi)
+      minDR = std::min(minDR, (float)reco::deltaR(el.eta(), el.phi(), tEta, tPhi));
+    ele_.isTrigMatched.push_back(minDR < triggerMatchingDR_);
     ele_.pt.push_back(el.pt());
     ele_.eta.push_back(el.eta());
     ele_.phi.push_back(el.phi());
@@ -705,6 +748,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
 
   // ── Fill taus ─────────────────────────────────────────────────────────────
   for (const auto &tau : *taus) {
+    tau_.isTrigMatched.push_back(false);
     tau_.pt.push_back(tau.pt());
     tau_.eta.push_back(tau.eta());
     tau_.phi.push_back(tau.phi());
