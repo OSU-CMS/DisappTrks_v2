@@ -28,6 +28,7 @@
 #include "TTree.h"
 
 #include <cmath>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -126,6 +127,15 @@ struct TrkBranches {
   std::vector<float> miniIso_chHad, miniIso_neutHad, miniIso_photon,
       miniIso_puChHad;
   std::vector<float> miniIso_relative;
+
+  // ── Convenience missing-hit aliases (match old-framework naming) ──────────
+  std::vector<int> missingInnerHits;  // trackerLayersWithoutMeasurement(MISSING_INNER_HITS)
+  std::vector<int> missingMiddleHits; // trackerLayersWithoutMeasurement(TRACK_HITS)
+  std::vector<int> missingOuterHits;  // trackerLayersWithoutMeasurement(MISSING_OUTER_HITS)
+  // hitDrop_missingMiddleHits mirrors osu::TrackBase::hitDrop_missingMiddleHits():
+  //   missingMiddleHits + extra holes from stochastic strip-hit drops (MC correction).
+  //   For data (hitInefficiency=0) equals missingMiddleHits.
+  std::vector<int> hitDrop_missingMiddleHits;
 
   // ── Derived ───────────────────────────────────────────────────────────────
   std::vector<float> dPhiMet, dPhiMetNoMu, ptOverMetNoMu;
@@ -280,6 +290,11 @@ struct TrkBranches {
     t->Branch((pfx + "_miniIso_photon").c_str(), &miniIso_photon);
     t->Branch((pfx + "_miniIso_puChHad").c_str(), &miniIso_puChHad);
     t->Branch((pfx + "_miniIso_relative").c_str(), &miniIso_relative);
+    // convenience missing-hit aliases
+    t->Branch((pfx + "_missingInnerHits").c_str(),          &missingInnerHits);
+    t->Branch((pfx + "_missingMiddleHits").c_str(),         &missingMiddleHits);
+    t->Branch((pfx + "_missingOuterHits").c_str(),          &missingOuterHits);
+    t->Branch((pfx + "_hitDrop_missingMiddleHits").c_str(), &hitDrop_missingMiddleHits);
     // derived
     t->Branch((pfx + "_dPhiMet").c_str(), &dPhiMet);
     t->Branch((pfx + "_dPhiMetNoMu").c_str(), &dPhiMetNoMu);
@@ -482,6 +497,10 @@ struct TrkBranches {
     crossedHcalStatus.clear();
     pfIso.clear();
     relativePFIso.clear();
+    missingInnerHits.clear();
+    missingMiddleHits.clear();
+    missingOuterHits.clear();
+    hitDrop_missingMiddleHits.clear();
     dPhiMet.clear();
     dPhiMetNoMu.clear();
     ptOverMetNoMu.clear();
@@ -601,6 +620,30 @@ struct JetBranches {
   }
 };
 
+// ── Hit-drop helper ───────────────────────────────────────────────────────────
+// Mirrors osu::TrackBase::hitDrop_missingMiddleHits(): counts tracker layers
+// without a hit on the track body (TRACK_HITS), then adds extra "holes" from
+// stochastically dropped strip hits to emulate MC hit inefficiency.
+// For data, pass hitInefficiency=0 and rng is unused — result equals
+// trackerLayersWithoutMeasurement(TRACK_HITS).
+static int computeHitDropMissingMiddleHits(const reco::HitPattern &hp,
+                                           std::mt19937 &rng,
+                                           float hitInefficiency) {
+  const int base = hp.trackerLayersWithoutMeasurement(reco::HitPattern::TRACK_HITS);
+  if (hitInefficiency <= 0.f) return base;
+
+  std::uniform_real_distribution<float> dist(0.f, 1.f);
+  const int nStripLayers = hp.stripLayersWithMeasurement();
+  int extra = 0;
+  bool started = false;
+  for (int i = 0; i < nStripLayers; ++i) {
+    const bool hitPresent = dist(rng) >= hitInefficiency; // false = hit dropped
+    if (!hitPresent && started) extra++;
+    if (hitPresent) started = true;
+  }
+  return base + extra;
+}
+
 } // namespace
 
 // ── Class declaration
@@ -630,6 +673,8 @@ private:
   std::string muonTriggerFilterName_;
   std::string electronTriggerFilterName_;
   float triggerMatchingDR_;
+  float hitInefficiency_;
+  std::mt19937 rng_;
 
   TTree *tree_;
 
@@ -680,6 +725,7 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   muonTriggerFilterName_     = iConfig.getParameter<std::string>("muonTriggerFilterName");
   electronTriggerFilterName_ = iConfig.getParameter<std::string>("electronTriggerFilterName");
   triggerMatchingDR_         = iConfig.getParameter<double>("triggerMatchingDR");
+  hitInefficiency_           = iConfig.getParameter<double>("hitInefficiency");
   usesResource(TFileService::kSharedResource);
   edm::Service<TFileService> fs;
   tree_ = fs->make<TTree>(iConfig.getParameter<std::string>("treeName").c_str(),
@@ -714,6 +760,10 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   run_ = iEvent.run();
   lumi_ = iEvent.luminosityBlock();
   eventNum_ = iEvent.id().event();
+  // Re-seed per event for reproducible hit-drop decisions on MC.
+  rng_.seed(static_cast<uint32_t>(run_) * 2654435761UL
+            ^ static_cast<uint32_t>(lumi_) * 40503UL
+            ^ static_cast<uint32_t>(eventNum_));
 
   edm::Handle<std::vector<pat::IsolatedTrack>> tracks;
   edm::Handle<std::vector<pat::MET>> mets;
@@ -905,6 +955,16 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     // ────────────────────────────────────────────────────────────
     const reco::HitPattern &hp = trk.hitPattern();
     using HP = reco::HitPattern;
+
+    // Convenience aliases matching old-framework variable names
+    const int mmInner = hp.trackerLayersWithoutMeasurement(HP::MISSING_INNER_HITS);
+    const int mmMiddle = hp.trackerLayersWithoutMeasurement(HP::TRACK_HITS);
+    const int mmOuter = hp.trackerLayersWithoutMeasurement(HP::MISSING_OUTER_HITS);
+    trk_.missingInnerHits.push_back(mmInner);
+    trk_.missingMiddleHits.push_back(mmMiddle);
+    trk_.missingOuterHits.push_back(mmOuter);
+    trk_.hitDrop_missingMiddleHits.push_back(
+        computeHitDropMissingMiddleHits(hp, rng_, hitInefficiency_));
 
     trk_.hp_numberOfAllHits.push_back(hp.numberOfAllHits(HP::TRACK_HITS));
     trk_.hp_numberOfAllTrackerHits.push_back(

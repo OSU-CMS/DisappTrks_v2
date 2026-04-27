@@ -308,6 +308,7 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     triggerResults=cms.InputTag("TriggerResults", "", "HLT"),
     triggerObjects=cms.InputTag("slimmedPatTrigger"),
     triggerMatchingDR=cms.double(0.3),
+    hitInefficiency=cms.double(0.0),   # 0 for data; set non-zero for MC hit-drop correction
     rhoAll         =cms.InputTag("fixedGridRhoFastjetAll"),
     rhoAllCalo     =cms.InputTag("fixedGridRhoFastjetAllCalo"),
     rhoCentralCalo =cms.InputTag("fixedGridRhoFastjetCentralCalo"),

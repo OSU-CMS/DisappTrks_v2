@@ -52,7 +52,8 @@ branches = [
     "ele_pt", "ele_eta", "ele_phi",
     "tau_pt", "tau_eta", "tau_phi",
     "trk_pt", "trk_eta", "trk_phi", "trk_charge",
-    "trk_nHits", "trk_missingInnerHits", "trk_missingMiddleHits", "trk_missingOuterHits",
+    "trk_missingInnerHits", "trk_missingMiddleHits", "trk_missingOuterHits",
+    "trk_hitDrop_missingMiddleHits",
     "trk_relativePFIso", "trk_caloTotal", "trk_caloTotNoPU",
     "jet_pt", "jet_phi", "jet_eta",
 ]
