@@ -16,6 +16,18 @@
 #include "DataFormats/VertexReco/interface/Vertex.h"
 #include "DataFormats/PatCandidates/interface/TriggerObjectStandAlone.h"
 
+// ECAL Imports
+#include "DataFormats/DetId/interface/DetId.h"
+#include "DataFormats/EcalDetId/interface/EBDetId.h"
+#include "DataFormats/EcalDetId/interface/EEDetId.h"
+#include "Geometry/CaloGeometry/interface/CaloGeometry.h"
+#include "Geometry/CaloGeometry/interface/CaloSubdetectorGeometry.h"
+#include "Geometry/CaloGeometry/interface/CaloCellGeometry.h"
+#include "Geometry/Records/interface/CaloGeometryRecord.h"
+#include "CondFormats/EcalObjects/interface/EcalChannelStatus.h"
+#include "CondFormats/DataRecord/interface/EcalChannelStatusRcd.h"
+#include <map>
+
 // Trigger
 #include "DataFormats/Common/interface/TriggerResults.h"
 #include "FWCore/Common/interface/TriggerNames.h"
@@ -31,6 +43,7 @@
 #include <random>
 #include <string>
 #include <vector>
+
 
 // ── Branch-group helpers
 // ──────────────────────────────────────────────────────
@@ -90,7 +103,7 @@ struct LepKin {
 
 struct TrkBranches {
   // ── Kinematics & track parameters ────────────────────────────────────────
-  std::vector<float> pt, eta, phi, dxy, dxyError, dz, dzError;
+  std::vector<float> pt, eta, theta, phi, dxy, dxyError, dz, dzError;
   std::vector<int> charge, fromPV;
   std::vector<float> deltaEta, deltaPhi;
   // ── Track quality flags ───────────────────────────────────────────────────
@@ -101,7 +114,7 @@ struct TrkBranches {
   std::vector<float> caloEm, caloHad, caloTotal, caloTotNoPU;
   std::vector<std::vector<uint16_t>> crossedEcalStatus;
   std::vector<std::vector<uint32_t>> crossedHcalStatus;
-
+  std::vector<float> minDRToMaskedEcal;
   // ── Isolation ─────────────────────────────────────────────────────────────
   std::vector<float> pfIso, relativePFIso;
   // DR03 PF isolation components
@@ -238,6 +251,7 @@ struct TrkBranches {
     // kinematics
     t->Branch((pfx + "_pt").c_str(), &pt);
     t->Branch((pfx + "_eta").c_str(), &eta);
+    t->Branch((pfx + "_theta").c_str(), &theta);
     t->Branch((pfx + "_phi").c_str(), &phi);
     t->Branch((pfx + "_dxy").c_str(), &dxy);
     t->Branch((pfx + "_dxyError").c_str(), &dxyError);
@@ -247,10 +261,12 @@ struct TrkBranches {
     t->Branch((pfx + "_fromPV").c_str(), &fromPV);
     t->Branch((pfx + "_deltaEta").c_str(), &deltaEta);
     t->Branch((pfx + "_deltaPhi").c_str(), &deltaPhi);
+    t->Branch((pfx + "_minDRToMaskedEcal").c_str(), &minDRToMaskedEcal);
     // quality
     t->Branch((pfx + "_isHighPurityTrack").c_str(), &isHighPurityTrack);
     t->Branch((pfx + "_isTightTrack").c_str(), &isTightTrack);
     t->Branch((pfx + "_isLooseTrack").c_str(), &isLooseTrack);
+
     // dEdx & calo
     t->Branch((pfx + "_dEdxStrip").c_str(), &dEdxStrip);
     t->Branch((pfx + "_dEdxPixel").c_str(), &dEdxPixel);
@@ -458,10 +474,12 @@ struct TrkBranches {
   void clear() {
     pt.clear();
     eta.clear();
+    theta.clear();
     phi.clear();
     dxy.clear();
     dxyError.clear();
     dz.clear();
+    minDRToMaskedEcal.clear();
     dzError.clear();
     charge.clear();
     fromPV.clear();
@@ -644,10 +662,12 @@ static int computeHitDropMissingMiddleHits(const reco::HitPattern &hp,
 
 // ── Class declaration
 // ─────────────────────────────────────────────────────────
-class Ntuplizer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
+class Ntuplizer : public edm::one::EDAnalyzer<edm::one::SharedResources, edm::one::WatchRuns> {
 public:
   explicit Ntuplizer(const edm::ParameterSet &);
   void analyze(const edm::Event &, const edm::EventSetup &) override;
+  void beginRun(const edm::Run&, const edm::EventSetup&) override;
+  void endRun (const edm::Run&, const edm::EventSetup&) override {};
 
 private:
   edm::EDGetTokenT<std::vector<pat::IsolatedTrack>> trackToken_;
@@ -672,13 +692,18 @@ private:
   float hitInefficiency_;
   std::mt19937 rng_;
 
+  edm::ESGetToken<CaloGeometry, CaloGeometryRecord>      caloGeometryToken_;
+  edm::ESGetToken<EcalChannelStatus, EcalChannelStatusRcd> ecalStatusToken_;
+  int    maskedEcalChannelStatusThreshold_;
+  std::map<DetId, std::pair<double, double>> maskedEcalChannels_;
+
+
   TTree *tree_;
 
   unsigned int run_, lumi_;
   unsigned long long eventNum_;
   float met_pt_, met_phi_, metNoMu_pt_, metNoMu_phi_;
   float rho_all_, rho_allCalo_, rho_centralCalo_;
-
   TrkBranches trk_;
   LepKin muon_, ele_, tau_;
   JetBranches jet_;
@@ -709,6 +734,7 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
       rhoAllToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAll"))),
       rhoAllCaloToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAllCalo"))),
       rhoCentralCaloToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoCentralCalo"))) {
+
   muonTriggerFilterName_     = iConfig.getParameter<std::string>("muonTriggerFilterName");
   electronTriggerFilterName_ = iConfig.getParameter<std::string>("electronTriggerFilterName");
   electronIdLabel_           = iConfig.getParameter<std::string>("electronIdLabel");
@@ -717,6 +743,13 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   tauVsMuLabel_              = iConfig.getParameter<std::string>("tauVsMuLabel");
   triggerMatchingDR_         = iConfig.getParameter<double>("triggerMatchingDR");
   hitInefficiency_           = iConfig.getParameter<double>("hitInefficiency");
+
+
+  caloGeometryToken_ = esConsumes<edm::Transition::BeginRun>();
+  ecalStatusToken_   = esConsumes<edm::Transition::BeginRun>();
+  maskedEcalChannelStatusThreshold_ =
+    iConfig.getParameter<int>("maskedEcalChannelStatusThreshold");
+  
   usesResource(TFileService::kSharedResource);
   edm::Service<TFileService> fs;
   tree_ = fs->make<TTree>(iConfig.getParameter<std::string>("treeName").c_str(),
@@ -739,6 +772,47 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   jet_.book(tree_, "jet");
   tau_.book(tree_, "tau");
   vtx_.book(tree_, "vtx");
+}
+
+void Ntuplizer::beginRun(const edm::Run&, const edm::EventSetup& iSetup) {
+  maskedEcalChannels_.clear();
+
+  const auto& caloGeometry = iSetup.getData(caloGeometryToken_);
+  const auto& ecalStatus   = iSetup.getData(ecalStatusToken_);
+
+  // EB channels
+  for (int ieta = -85; ieta <= 85; ++ieta) {
+    for (int iphi = 0; iphi <= 360; ++iphi) {
+      if (!EBDetId::validDetId(ieta, iphi)) continue;
+      const EBDetId detid(ieta, iphi, EBDetId::ETAPHIMODE);
+      const auto chit = ecalStatus.find(detid);
+      const int status = (chit != ecalStatus.end())
+          ? chit->getStatusCode() & 0x1F : -1;
+      if (status < maskedEcalChannelStatusThreshold_) continue;
+      const auto* subGeom  = caloGeometry.getSubdetectorGeometry(detid);
+      const auto  cellGeom = subGeom->getGeometry(detid);
+      maskedEcalChannels_[detid] = {cellGeom->getPosition().eta(),
+                                    cellGeom->getPosition().phi()};
+    }
+  }
+
+  // EE channels
+  for (int ix = 0; ix <= 100; ++ix) {
+    for (int iy = 0; iy <= 100; ++iy) {
+      for (int iz = -1; iz <= 1; iz += 2) {
+        if (!EEDetId::validDetId(ix, iy, iz)) continue;
+        const EEDetId detid(ix, iy, iz, EEDetId::XYMODE);
+        const auto chit = ecalStatus.find(detid);
+        const int status = (chit != ecalStatus.end())
+            ? chit->getStatusCode() & 0x1F : -1;
+        if (status < maskedEcalChannelStatusThreshold_) continue;
+        const auto* subGeom  = caloGeometry.getSubdetectorGeometry(detid);
+        const auto  cellGeom = subGeom->getGeometry(detid);
+        maskedEcalChannels_[detid] = {cellGeom->getPosition().eta(),
+                                      cellGeom->getPosition().phi()};
+      }
+    }
+  }
 }
 
 // ── analyze
@@ -865,6 +939,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     // ── Kinematics ───────────────────────────────────────────────────────────
     trk_.pt.push_back(trk.pt());
     trk_.eta.push_back(trk.eta());
+    trk_.theta.push_back(trk.theta());
     trk_.phi.push_back(trk.phi());
     trk_.dxy.push_back(trk.dxy());
     trk_.dxyError.push_back(trk.dxyError());
@@ -875,6 +950,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.deltaEta.push_back(trk.deltaEta());
     trk_.deltaPhi.push_back(trk.deltaPhi());
     // ── Track quality (decoded from trackQuality bitmask) ────────────────────
+    // 
     trk_.isHighPurityTrack.push_back(trk.isHighPurityTrack());
     trk_.isTightTrack.push_back(trk.isTightTrack());
     trk_.isLooseTrack.push_back(trk.isLooseTrack());
@@ -1098,6 +1174,19 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
         hp.numberOfValidTOBLayersWithMonoAndStereo());
     trk_.hp_numberOfValidTECLayersWithMonoAndStereo.push_back(
         hp.numberOfValidTECLayersWithMonoAndStereo());
+
+
+
+    // Min DR to bad ECAL channels
+    double minDR = -1.0;
+        for (const auto& entry : maskedEcalChannels_) {
+            const double dR = reco::deltaR(
+                trk.eta(), trk.phi(),
+                entry.second.first, entry.second.second);
+            if (minDR < 0.0 || dR < minDR) minDR = dR;
+        }
+        trk_.minDRToMaskedEcal.push_back(static_cast<float>(minDR));
+
   }
   // ── Fill jets
   for (const auto &jet : *jets) {

@@ -249,14 +249,15 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     rhoAll               = cms.InputTag("fixedGridRhoFastjetAll"),
     rhoAllCalo           = cms.InputTag("fixedGridRhoFastjetAllCalo"),
     rhoCentralCalo       = cms.InputTag("fixedGridRhoFastjetCentralCalo"),
+    maskedEcalChannelStatusThreshold = cms.int32(3)
 )
 
 process.p = cms.Path(
     process.hltFilter *
     process.metFilters *
     process.ecalBadCalibReducedMINIAODFilter*
-    process.TrackEcalDeadChannelFilter *
-    process.JvmAppliedEventFilter *
+    #process.TrackEcalDeadChannelFilter *
+    #process.JvmAppliedEventFilter *
     process.jecAppliedJetProducer *
     process.jecAppliedMetProducer *
     process.ntuplizer
