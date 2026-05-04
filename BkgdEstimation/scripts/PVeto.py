@@ -1,3 +1,8 @@
+"""
+Script to calculate PVeto from the Ntuples
+"""
+
+
 import uproot
 import math
 import awkward as ak

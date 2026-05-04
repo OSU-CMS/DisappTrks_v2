@@ -1,0 +1,1 @@
+This directory contains the many CMSSW modules that were written in the process of getting to the final version of the code base. These modules are not used in the current iteration of the code, however they are kept here in case anyone would like to use them for inspiration later on. 
