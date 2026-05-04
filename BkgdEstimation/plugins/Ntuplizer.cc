@@ -1,3 +1,74 @@
+// ============================================================================
+// Ntuplizer
+// ============================================================================
+// Description:
+//   CMSSW EDAnalyzer that produces a flat ROOT TTree ntuple from PAT-level
+//   physics objects. Intended for use in the disappearing-track
+//   analysis. One entry is written per event containing per-object vectors for
+//   all object collections.
+//
+// Output Collections:
+//   trk   — PAT IsolatedTracks with full hit pattern, dE/dx, calo energy,
+//            PF/mini isolation, missing-hit counts, and a stochastic
+//            hit-drop correction (hitDrop_missingMiddleHits) for MC/data
+//            agreement studies.
+//   muon  — PAT Muons with kinematics, tight ID, Δβ-corrected PF isolation
+//            (R=0.4), and trigger matching.
+//   ele   — PAT Electrons with kinematics, cut-based tight ID, and trigger
+//            matching.
+//   tau   — PAT Taus with kinematics and configurable DeepTau vs-jet/ele/mu
+//            discriminator IDs.
+//   jet   — PAT Jets with kinematics and the Run-3 Tight Lepton Veto ID,
+//            applied inline across four |η| regions.
+//   vtx   — Primary vertices with position, errors, χ², ndof, and validity.
+//
+// Event-level Branches:
+//   run, lumi, eventNum — event identification
+//   met_pt, met_phi     — type-1 corrected MET
+//   metNoMu_pt/phi      — MET with muon momenta added back (for MET triggers)
+//   rho_all             — energy density for PU correction (full detector)
+//   rho_allCalo         — energy density (all calo)
+//   rho_centralCalo     — energy density (central calo); used for track
+//                         caloTotNoPU = max(0, E_calo - ρ·π·ΔR²), ΔR=0.4
+//
+// ECAL Masking:
+//   At the start of each Run, bad ECAL channels are identified by querying
+//   EcalChannelStatus and keeping those with status ≥
+//   maskedEcalChannelStatusThreshold. The (η, φ) positions of masked channels
+//   are cached and used per-track to compute minDRToMaskedEcal.
+//
+// MC Hit-Drop Correction:
+//   hitDrop_missingMiddleHits emulates strip-hit inefficiency in MC by
+//   stochastically dropping hits on measured strip layers with probability
+//   hitInefficiency, then counting additional holes introduced on the track
+//   body. The RNG is re-seeded deterministically per event (run × lumi ×
+//   event) for reproducibility. For data, set hitInefficiency = 0, which
+//   makes hitDrop_missingMiddleHits identical to missingMiddleHits.
+//
+// Configuration Parameters (python PSet):
+//   InputTags:
+//     tracks, met, muons, electrons, jets, taus, vertices,
+//     triggerResults, triggerObjects,
+//     rhoAll, rhoAllCalo, rhoCentralCalo
+//   Strings:
+//     treeName                      — name of the output TTree
+//     muonTriggerFilterName         — HLT filter label for muon tag matching
+//     electronTriggerFilterName     — HLT filter label for electron tag
+//     matching electronIdLabel               — PAT electron ID key (e.g.
+//     cutBasedElectronID-...) tauVsJetLabel                 — DeepTau vs-jet
+//     discriminator key tauVsEleLabel                 — DeepTau vs-electron
+//     discriminator key tauVsMuLabel                  — DeepTau vs-muon
+//     discriminator key
+//   Doubles:
+//     triggerMatchingDR             — ΔR cone for lepton–trigger object
+//     matching hitInefficiency               — per-layer strip hit drop
+//     probability (MC only)
+//   Int:
+//     maskedEcalChannelStatusThreshold — minimum EcalChannelStatus code to mask
+//
+//
+// Authors:  Ryan De Los Santos
+// ============================================================================
 // ── Includes ─────────────────────────────────────────────────────────────────
 #include "CommonTools/UtilAlgos/interface/TFileService.h"
 #include "FWCore/Framework/interface/Event.h"
@@ -13,19 +84,19 @@
 #include "DataFormats/PatCandidates/interface/MET.h"
 #include "DataFormats/PatCandidates/interface/Muon.h"
 #include "DataFormats/PatCandidates/interface/Tau.h"
-#include "DataFormats/VertexReco/interface/Vertex.h"
 #include "DataFormats/PatCandidates/interface/TriggerObjectStandAlone.h"
+#include "DataFormats/VertexReco/interface/Vertex.h"
 
 // ECAL Imports
+#include "CondFormats/DataRecord/interface/EcalChannelStatusRcd.h"
+#include "CondFormats/EcalObjects/interface/EcalChannelStatus.h"
 #include "DataFormats/DetId/interface/DetId.h"
 #include "DataFormats/EcalDetId/interface/EBDetId.h"
 #include "DataFormats/EcalDetId/interface/EEDetId.h"
+#include "Geometry/CaloGeometry/interface/CaloCellGeometry.h"
 #include "Geometry/CaloGeometry/interface/CaloGeometry.h"
 #include "Geometry/CaloGeometry/interface/CaloSubdetectorGeometry.h"
-#include "Geometry/CaloGeometry/interface/CaloCellGeometry.h"
 #include "Geometry/Records/interface/CaloGeometryRecord.h"
-#include "CondFormats/EcalObjects/interface/EcalChannelStatus.h"
-#include "CondFormats/DataRecord/interface/EcalChannelStatusRcd.h"
 #include <map>
 
 // Trigger
@@ -44,7 +115,6 @@
 #include <string>
 #include <vector>
 
-
 // ── Branch-group helpers
 // ──────────────────────────────────────────────────────
 namespace {
@@ -53,51 +123,64 @@ struct VertexBranches {
   std::vector<float> x, y, z;
   std::vector<float> xError, yError, zError;
   std::vector<float> chi2, normalizedChi2;
-  std::vector<int>   ndof, nTracks;
-  std::vector<bool>  isValid, isFake;
+  std::vector<int> ndof, nTracks;
+  std::vector<bool> isValid, isFake;
 
   void book(TTree *t, const std::string &pfx) {
-    t->Branch((pfx + "_x").c_str(),             &x);
-    t->Branch((pfx + "_y").c_str(),             &y);
-    t->Branch((pfx + "_z").c_str(),             &z);
-    t->Branch((pfx + "_xError").c_str(),        &xError);
-    t->Branch((pfx + "_yError").c_str(),        &yError);
-    t->Branch((pfx + "_zError").c_str(),        &zError);
-    t->Branch((pfx + "_chi2").c_str(),          &chi2);
-    t->Branch((pfx + "_normalizedChi2").c_str(),&normalizedChi2);
-    t->Branch((pfx + "_ndof").c_str(),          &ndof);
-    t->Branch((pfx + "_nTracks").c_str(),       &nTracks);
-    t->Branch((pfx + "_isValid").c_str(),       &isValid);
-    t->Branch((pfx + "_isFake").c_str(),        &isFake);
+    t->Branch((pfx + "_x").c_str(), &x);
+    t->Branch((pfx + "_y").c_str(), &y);
+    t->Branch((pfx + "_z").c_str(), &z);
+    t->Branch((pfx + "_xError").c_str(), &xError);
+    t->Branch((pfx + "_yError").c_str(), &yError);
+    t->Branch((pfx + "_zError").c_str(), &zError);
+    t->Branch((pfx + "_chi2").c_str(), &chi2);
+    t->Branch((pfx + "_normalizedChi2").c_str(), &normalizedChi2);
+    t->Branch((pfx + "_ndof").c_str(), &ndof);
+    t->Branch((pfx + "_nTracks").c_str(), &nTracks);
+    t->Branch((pfx + "_isValid").c_str(), &isValid);
+    t->Branch((pfx + "_isFake").c_str(), &isFake);
   }
   void clear() {
-    x.clear(); y.clear(); z.clear();
-    xError.clear(); yError.clear(); zError.clear();
-    chi2.clear(); normalizedChi2.clear();
-    ndof.clear(); nTracks.clear();
-    isValid.clear(); isFake.clear();
+    x.clear();
+    y.clear();
+    z.clear();
+    xError.clear();
+    yError.clear();
+    zError.clear();
+    chi2.clear();
+    normalizedChi2.clear();
+    ndof.clear();
+    nTracks.clear();
+    isValid.clear();
+    isFake.clear();
   }
 };
 
 struct LepKin {
   std::vector<float> pt, eta, phi;
-  std::vector<int>   charge;
-  std::vector<bool>  isTrigMatched;
-  std::vector<bool>  isTight;          // isTightMuon / cutBased tight ele / tau ID combo
-  std::vector<float> pfRelIso04_dBeta; // Δβ-corrected rel. PF iso (muons); -1 for others
+  std::vector<int> charge;
+  std::vector<bool> isTrigMatched;
+  std::vector<bool> isTight; // isTightMuon / cutBased tight ele / tau ID combo
+  std::vector<float>
+      pfRelIso04_dBeta; // Δβ-corrected rel. PF iso (muons); -1 for others
 
   void book(TTree *t, const std::string &pfx) {
-    t->Branch((pfx + "_pt").c_str(),             &pt);
-    t->Branch((pfx + "_eta").c_str(),            &eta);
-    t->Branch((pfx + "_phi").c_str(),            &phi);
-    t->Branch((pfx + "_charge").c_str(),         &charge);
-    t->Branch((pfx + "_isTrigMatched").c_str(),  &isTrigMatched);
-    t->Branch((pfx + "_isTight").c_str(),        &isTight);
+    t->Branch((pfx + "_pt").c_str(), &pt);
+    t->Branch((pfx + "_eta").c_str(), &eta);
+    t->Branch((pfx + "_phi").c_str(), &phi);
+    t->Branch((pfx + "_charge").c_str(), &charge);
+    t->Branch((pfx + "_isTrigMatched").c_str(), &isTrigMatched);
+    t->Branch((pfx + "_isTight").c_str(), &isTight);
     t->Branch((pfx + "_pfRelIso04_dBeta").c_str(), &pfRelIso04_dBeta);
   }
   void clear() {
-    pt.clear(); eta.clear(); phi.clear(); charge.clear();
-    isTrigMatched.clear(); isTight.clear(); pfRelIso04_dBeta.clear();
+    pt.clear();
+    eta.clear();
+    phi.clear();
+    charge.clear();
+    isTrigMatched.clear();
+    isTight.clear();
+    pfRelIso04_dBeta.clear();
   }
 };
 
@@ -125,12 +208,16 @@ struct TrkBranches {
   std::vector<float> miniIso_relative;
 
   // ── Convenience missing-hit aliases (match old-framework naming) ──────────
-  std::vector<int> missingInnerHits;  // trackerLayersWithoutMeasurement(MISSING_INNER_HITS)
-  std::vector<int> missingMiddleHits; // trackerLayersWithoutMeasurement(TRACK_HITS)
-  std::vector<int> missingOuterHits;  // trackerLayersWithoutMeasurement(MISSING_OUTER_HITS)
-  // hitDrop_missingMiddleHits mirrors osu::TrackBase::hitDrop_missingMiddleHits():
-  //   missingMiddleHits + extra holes from stochastic strip-hit drops (MC correction).
-  //   For data (hitInefficiency=0) equals missingMiddleHits.
+  std::vector<int>
+      missingInnerHits; // trackerLayersWithoutMeasurement(MISSING_INNER_HITS)
+  std::vector<int>
+      missingMiddleHits; // trackerLayersWithoutMeasurement(TRACK_HITS)
+  std::vector<int>
+      missingOuterHits; // trackerLayersWithoutMeasurement(MISSING_OUTER_HITS)
+  // hitDrop_missingMiddleHits mirrors
+  // osu::TrackBase::hitDrop_missingMiddleHits():
+  //   missingMiddleHits + extra holes from stochastic strip-hit drops (MC
+  //   correction). For data (hitInefficiency=0) equals missingMiddleHits.
   std::vector<int> hitDrop_missingMiddleHits;
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -290,10 +377,11 @@ struct TrkBranches {
     t->Branch((pfx + "_miniIso_puChHad").c_str(), &miniIso_puChHad);
     t->Branch((pfx + "_miniIso_relative").c_str(), &miniIso_relative);
     // convenience missing-hit aliases
-    t->Branch((pfx + "_missingInnerHits").c_str(),          &missingInnerHits);
-    t->Branch((pfx + "_missingMiddleHits").c_str(),         &missingMiddleHits);
-    t->Branch((pfx + "_missingOuterHits").c_str(),          &missingOuterHits);
-    t->Branch((pfx + "_hitDrop_missingMiddleHits").c_str(), &hitDrop_missingMiddleHits);
+    t->Branch((pfx + "_missingInnerHits").c_str(), &missingInnerHits);
+    t->Branch((pfx + "_missingMiddleHits").c_str(), &missingMiddleHits);
+    t->Branch((pfx + "_missingOuterHits").c_str(), &missingOuterHits);
+    t->Branch((pfx + "_hitDrop_missingMiddleHits").c_str(),
+              &hitDrop_missingMiddleHits);
     // derived
     t->Branch((pfx + "_dPhiMet").c_str(), &dPhiMet);
     t->Branch((pfx + "_dPhiMetNoMu").c_str(), &dPhiMetNoMu);
@@ -606,45 +694,52 @@ struct TrkBranches {
 
 struct JetBranches {
   std::vector<float> pt, eta, phi, energy;
-  std::vector<bool>  isTightLepVeto;
+  std::vector<bool> isTightLepVeto;
 
   void book(TTree *t, const std::string &pfx) {
-    t->Branch((pfx + "_pt").c_str(),            &pt);
-    t->Branch((pfx + "_eta").c_str(),           &eta);
-    t->Branch((pfx + "_phi").c_str(),           &phi);
-    t->Branch((pfx + "_energy").c_str(),        &energy);
+    t->Branch((pfx + "_pt").c_str(), &pt);
+    t->Branch((pfx + "_eta").c_str(), &eta);
+    t->Branch((pfx + "_phi").c_str(), &phi);
+    t->Branch((pfx + "_energy").c_str(), &energy);
     t->Branch((pfx + "_isTightLepVeto").c_str(), &isTightLepVeto);
   }
   void clear() {
-    pt.clear(); eta.clear(); phi.clear(); energy.clear();
+    pt.clear();
+    eta.clear();
+    phi.clear();
+    energy.clear();
     isTightLepVeto.clear();
   }
 };
 
-// ── Tau ID helper ─────────────────────────────────────────────────────────────
-static bool tauPassesId(const pat::Tau &tau,
-                        const std::string &vsJet,
-                        const std::string &vsEle,
-                        const std::string &vsMu) {
+// ── Tau ID helper
+// ─────────────────────────────────────────────────────────────
+static bool tauPassesId(const pat::Tau &tau, const std::string &vsJet,
+                        const std::string &vsEle, const std::string &vsMu) {
   auto check = [&tau](const std::string &label) -> bool {
-    if (label.empty()) return true;
-    if (!tau.isTauIDAvailable(label)) return false;
+    if (label.empty())
+      return true;
+    if (!tau.isTauIDAvailable(label))
+      return false;
     return tau.tauID(label) > 0.5f;
   };
   return check(vsJet) && check(vsEle) && check(vsMu);
 }
 
-// ── Hit-drop helper ───────────────────────────────────────────────────────────
-// Mirrors osu::TrackBase::hitDrop_missingMiddleHits(): counts tracker layers
-// without a hit on the track body (TRACK_HITS), then adds extra "holes" from
+// ── Hit-drop helper
+// ─────────────────────────────────────────────────────────── Mirrors
+// osu::TrackBase::hitDrop_missingMiddleHits(): counts tracker layers without a
+// hit on the track body (TRACK_HITS), then adds extra "holes" from
 // stochastically dropped strip hits to emulate MC hit inefficiency.
 // For data, pass hitInefficiency=0 and rng is unused — result equals
 // trackerLayersWithoutMeasurement(TRACK_HITS).
 static int computeHitDropMissingMiddleHits(const reco::HitPattern &hp,
                                            std::mt19937 &rng,
                                            float hitInefficiency) {
-  const int base = hp.trackerLayersWithoutMeasurement(reco::HitPattern::TRACK_HITS);
-  if (hitInefficiency <= 0.f) return base;
+  const int base =
+      hp.trackerLayersWithoutMeasurement(reco::HitPattern::TRACK_HITS);
+  if (hitInefficiency <= 0.f)
+    return base;
 
   std::uniform_real_distribution<float> dist(0.f, 1.f);
   const int nStripLayers = hp.stripLayersWithMeasurement();
@@ -652,8 +747,10 @@ static int computeHitDropMissingMiddleHits(const reco::HitPattern &hp,
   bool started = false;
   for (int i = 0; i < nStripLayers; ++i) {
     const bool hitPresent = dist(rng) >= hitInefficiency; // false = hit dropped
-    if (!hitPresent && started) extra++;
-    if (hitPresent) started = true;
+    if (!hitPresent && started)
+      extra++;
+    if (hitPresent)
+      started = true;
   }
   return base + extra;
 }
@@ -662,12 +759,13 @@ static int computeHitDropMissingMiddleHits(const reco::HitPattern &hp,
 
 // ── Class declaration
 // ─────────────────────────────────────────────────────────
-class Ntuplizer : public edm::one::EDAnalyzer<edm::one::SharedResources, edm::one::WatchRuns> {
+class Ntuplizer : public edm::one::EDAnalyzer<edm::one::SharedResources,
+                                              edm::one::WatchRuns> {
 public:
   explicit Ntuplizer(const edm::ParameterSet &);
   void analyze(const edm::Event &, const edm::EventSetup &) override;
-  void beginRun(const edm::Run&, const edm::EventSetup&) override;
-  void endRun (const edm::Run&, const edm::EventSetup&) override {};
+  void beginRun(const edm::Run &, const edm::EventSetup &) override;
+  void endRun(const edm::Run &, const edm::EventSetup &) override {};
 
 private:
   edm::EDGetTokenT<std::vector<pat::IsolatedTrack>> trackToken_;
@@ -692,11 +790,10 @@ private:
   float hitInefficiency_;
   std::mt19937 rng_;
 
-  edm::ESGetToken<CaloGeometry, CaloGeometryRecord>      caloGeometryToken_;
+  edm::ESGetToken<CaloGeometry, CaloGeometryRecord> caloGeometryToken_;
   edm::ESGetToken<EcalChannelStatus, EcalChannelStatusRcd> ecalStatusToken_;
-  int    maskedEcalChannelStatusThreshold_;
+  int maskedEcalChannelStatusThreshold_;
   std::map<DetId, std::pair<double, double>> maskedEcalChannels_;
-
 
   TTree *tree_;
 
@@ -731,25 +828,29 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
           iConfig.getParameter<edm::InputTag>("triggerResults"))),
       triggerObjectsToken_(consumes<pat::TriggerObjectStandAloneCollection>(
           iConfig.getParameter<edm::InputTag>("triggerObjects"))),
-      rhoAllToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAll"))),
-      rhoAllCaloToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAllCalo"))),
-      rhoCentralCaloToken_(consumes<double>(iConfig.getParameter<edm::InputTag>("rhoCentralCalo"))) {
+      rhoAllToken_(
+          consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAll"))),
+      rhoAllCaloToken_(
+          consumes<double>(iConfig.getParameter<edm::InputTag>("rhoAllCalo"))),
+      rhoCentralCaloToken_(consumes<double>(
+          iConfig.getParameter<edm::InputTag>("rhoCentralCalo"))) {
 
-  muonTriggerFilterName_     = iConfig.getParameter<std::string>("muonTriggerFilterName");
-  electronTriggerFilterName_ = iConfig.getParameter<std::string>("electronTriggerFilterName");
-  electronIdLabel_           = iConfig.getParameter<std::string>("electronIdLabel");
-  tauVsJetLabel_             = iConfig.getParameter<std::string>("tauVsJetLabel");
-  tauVsEleLabel_             = iConfig.getParameter<std::string>("tauVsEleLabel");
-  tauVsMuLabel_              = iConfig.getParameter<std::string>("tauVsMuLabel");
-  triggerMatchingDR_         = iConfig.getParameter<double>("triggerMatchingDR");
-  hitInefficiency_           = iConfig.getParameter<double>("hitInefficiency");
-
+  muonTriggerFilterName_ =
+      iConfig.getParameter<std::string>("muonTriggerFilterName");
+  electronTriggerFilterName_ =
+      iConfig.getParameter<std::string>("electronTriggerFilterName");
+  electronIdLabel_ = iConfig.getParameter<std::string>("electronIdLabel");
+  tauVsJetLabel_ = iConfig.getParameter<std::string>("tauVsJetLabel");
+  tauVsEleLabel_ = iConfig.getParameter<std::string>("tauVsEleLabel");
+  tauVsMuLabel_ = iConfig.getParameter<std::string>("tauVsMuLabel");
+  triggerMatchingDR_ = iConfig.getParameter<double>("triggerMatchingDR");
+  hitInefficiency_ = iConfig.getParameter<double>("hitInefficiency");
 
   caloGeometryToken_ = esConsumes<edm::Transition::BeginRun>();
-  ecalStatusToken_   = esConsumes<edm::Transition::BeginRun>();
+  ecalStatusToken_ = esConsumes<edm::Transition::BeginRun>();
   maskedEcalChannelStatusThreshold_ =
-    iConfig.getParameter<int>("maskedEcalChannelStatusThreshold");
-  
+      iConfig.getParameter<int>("maskedEcalChannelStatusThreshold");
+
   usesResource(TFileService::kSharedResource);
   edm::Service<TFileService> fs;
   tree_ = fs->make<TTree>(iConfig.getParameter<std::string>("treeName").c_str(),
@@ -774,23 +875,25 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   vtx_.book(tree_, "vtx");
 }
 
-void Ntuplizer::beginRun(const edm::Run&, const edm::EventSetup& iSetup) {
+void Ntuplizer::beginRun(const edm::Run &, const edm::EventSetup &iSetup) {
   maskedEcalChannels_.clear();
 
-  const auto& caloGeometry = iSetup.getData(caloGeometryToken_);
-  const auto& ecalStatus   = iSetup.getData(ecalStatusToken_);
+  const auto &caloGeometry = iSetup.getData(caloGeometryToken_);
+  const auto &ecalStatus = iSetup.getData(ecalStatusToken_);
 
   // EB channels
   for (int ieta = -85; ieta <= 85; ++ieta) {
     for (int iphi = 0; iphi <= 360; ++iphi) {
-      if (!EBDetId::validDetId(ieta, iphi)) continue;
+      if (!EBDetId::validDetId(ieta, iphi))
+        continue;
       const EBDetId detid(ieta, iphi, EBDetId::ETAPHIMODE);
       const auto chit = ecalStatus.find(detid);
-      const int status = (chit != ecalStatus.end())
-          ? chit->getStatusCode() & 0x1F : -1;
-      if (status < maskedEcalChannelStatusThreshold_) continue;
-      const auto* subGeom  = caloGeometry.getSubdetectorGeometry(detid);
-      const auto  cellGeom = subGeom->getGeometry(detid);
+      const int status =
+          (chit != ecalStatus.end()) ? chit->getStatusCode() & 0x1F : -1;
+      if (status < maskedEcalChannelStatusThreshold_)
+        continue;
+      const auto *subGeom = caloGeometry.getSubdetectorGeometry(detid);
+      const auto cellGeom = subGeom->getGeometry(detid);
       maskedEcalChannels_[detid] = {cellGeom->getPosition().eta(),
                                     cellGeom->getPosition().phi()};
     }
@@ -800,14 +903,16 @@ void Ntuplizer::beginRun(const edm::Run&, const edm::EventSetup& iSetup) {
   for (int ix = 0; ix <= 100; ++ix) {
     for (int iy = 0; iy <= 100; ++iy) {
       for (int iz = -1; iz <= 1; iz += 2) {
-        if (!EEDetId::validDetId(ix, iy, iz)) continue;
+        if (!EEDetId::validDetId(ix, iy, iz))
+          continue;
         const EEDetId detid(ix, iy, iz, EEDetId::XYMODE);
         const auto chit = ecalStatus.find(detid);
-        const int status = (chit != ecalStatus.end())
-            ? chit->getStatusCode() & 0x1F : -1;
-        if (status < maskedEcalChannelStatusThreshold_) continue;
-        const auto* subGeom  = caloGeometry.getSubdetectorGeometry(detid);
-        const auto  cellGeom = subGeom->getGeometry(detid);
+        const int status =
+            (chit != ecalStatus.end()) ? chit->getStatusCode() & 0x1F : -1;
+        if (status < maskedEcalChannelStatusThreshold_)
+          continue;
+        const auto *subGeom = caloGeometry.getSubdetectorGeometry(detid);
+        const auto cellGeom = subGeom->getGeometry(detid);
         maskedEcalChannels_[detid] = {cellGeom->getPosition().eta(),
                                       cellGeom->getPosition().phi()};
       }
@@ -822,9 +927,9 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   lumi_ = iEvent.luminosityBlock();
   eventNum_ = iEvent.id().event();
   // Re-seed per event for reproducible hit-drop decisions on MC.
-  rng_.seed(static_cast<uint32_t>(run_) * 2654435761UL
-            ^ static_cast<uint32_t>(lumi_) * 40503UL
-            ^ static_cast<uint32_t>(eventNum_));
+  rng_.seed(static_cast<uint32_t>(run_) * 2654435761UL ^
+            static_cast<uint32_t>(lumi_) * 40503UL ^
+            static_cast<uint32_t>(eventNum_));
 
   edm::Handle<std::vector<pat::IsolatedTrack>> tracks;
   edm::Handle<std::vector<pat::MET>> mets;
@@ -846,21 +951,24 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   iEvent.getByToken(vertexToken_, vertices);
   iEvent.getByToken(triggerResultsToken_, triggerResults);
   iEvent.getByToken(triggerObjectsToken_, trigObjs);
-  iEvent.getByToken(rhoAllToken_,         rhoAll);
-  iEvent.getByToken(rhoAllCaloToken_,     rhoAllCalo);
+  iEvent.getByToken(rhoAllToken_, rhoAll);
+  iEvent.getByToken(rhoAllCaloToken_, rhoAllCalo);
   iEvent.getByToken(rhoCentralCaloToken_, rhoCentralCalo);
-  rho_all_         = *rhoAll;
-  rho_allCalo_     = *rhoAllCalo;
+  rho_all_ = *rhoAll;
+  rho_allCalo_ = *rhoAllCalo;
   rho_centralCalo_ = *rhoCentralCalo;
 
-  // Collect (eta, phi) of trigger objects for muon and electron tag filters — unpack once.
+  // Collect (eta, phi) of trigger objects for muon and electron tag filters —
+  // unpack once.
   std::vector<std::pair<float, float>> muonTrigObjsEtaPhi;
   std::vector<std::pair<float, float>> eleTrigObjsEtaPhi;
-  for (auto obj : *trigObjs) {  // intentional copy: unpackNamesAndLabels mutates
+  for (auto obj : *trigObjs) { // intentional copy: unpackNamesAndLabels mutates
     obj.unpackNamesAndLabels(iEvent, *triggerResults);
-    if (!muonTriggerFilterName_.empty() && obj.hasFilterLabel(muonTriggerFilterName_))
+    if (!muonTriggerFilterName_.empty() &&
+        obj.hasFilterLabel(muonTriggerFilterName_))
       muonTrigObjsEtaPhi.emplace_back(obj.eta(), obj.phi());
-    if (!electronTriggerFilterName_.empty() && obj.hasFilterLabel(electronTriggerFilterName_))
+    if (!electronTriggerFilterName_.empty() &&
+        obj.hasFilterLabel(electronTriggerFilterName_))
       eleTrigObjsEtaPhi.emplace_back(obj.eta(), obj.phi());
   }
 
@@ -892,7 +1000,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   for (const auto &mu : *muons) {
     float minDR = 999.f;
     for (const auto &[tEta, tPhi] : muonTrigObjsEtaPhi)
-      minDR = std::min(minDR, (float)reco::deltaR(mu.eta(), mu.phi(), tEta, tPhi));
+      minDR =
+          std::min(minDR, (float)reco::deltaR(mu.eta(), mu.phi(), tEta, tPhi));
     muon_.isTrigMatched.push_back(minDR < triggerMatchingDR_);
     muon_.pt.push_back(mu.pt());
     muon_.eta.push_back(mu.eta());
@@ -900,10 +1009,10 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     muon_.charge.push_back(mu.charge());
     muon_.isTight.push_back(pv && mu.isTightMuon(*pv));
     const auto &iso4 = mu.pfIsolationR04();
-    const float absIso = iso4.sumChargedHadronPt
-                       + std::max(0.f, iso4.sumNeutralHadronEt
-                                       + iso4.sumPhotonEt
-                                       - 0.5f * iso4.sumPUPt);
+    const float absIso =
+        iso4.sumChargedHadronPt +
+        std::max(0.f, iso4.sumNeutralHadronEt + iso4.sumPhotonEt -
+                          0.5f * iso4.sumPUPt);
     muon_.pfRelIso04_dBeta.push_back(mu.pt() > 0.f ? absIso / mu.pt() : -1.f);
   }
 
@@ -911,16 +1020,18 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   for (const auto &el : *electrons) {
     float minDR = 999.f;
     for (const auto &[tEta, tPhi] : eleTrigObjsEtaPhi)
-      minDR = std::min(minDR, (float)reco::deltaR(el.eta(), el.phi(), tEta, tPhi));
+      minDR =
+          std::min(minDR, (float)reco::deltaR(el.eta(), el.phi(), tEta, tPhi));
     ele_.isTrigMatched.push_back(minDR < triggerMatchingDR_);
     ele_.pt.push_back(el.pt());
     ele_.eta.push_back(el.eta());
     ele_.phi.push_back(el.phi());
     ele_.charge.push_back(el.charge());
-    const bool isTightEle = el.isElectronIDAvailable(electronIdLabel_)
-                          && el.electronID(electronIdLabel_) > 0.5f;
+    const bool isTightEle = el.isElectronIDAvailable(electronIdLabel_) &&
+                            el.electronID(electronIdLabel_) > 0.5f;
     ele_.isTight.push_back(isTightEle);
-    ele_.pfRelIso04_dBeta.push_back(-1.f); // electrons use rho-corrected iso, included in isTight
+    ele_.pfRelIso04_dBeta.push_back(
+        -1.f); // electrons use rho-corrected iso, included in isTight
   }
 
   // ── Fill taus ─────────────────────────────────────────────────────────────
@@ -930,7 +1041,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     tau_.eta.push_back(tau.eta());
     tau_.phi.push_back(tau.phi());
     tau_.charge.push_back(tau.charge());
-    tau_.isTight.push_back(tauPassesId(tau, tauVsJetLabel_, tauVsEleLabel_, tauVsMuLabel_));
+    tau_.isTight.push_back(
+        tauPassesId(tau, tauVsJetLabel_, tauVsEleLabel_, tauVsMuLabel_));
     tau_.pfRelIso04_dBeta.push_back(-1.f);
   }
 
@@ -950,7 +1062,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.deltaEta.push_back(trk.deltaEta());
     trk_.deltaPhi.push_back(trk.deltaPhi());
     // ── Track quality (decoded from trackQuality bitmask) ────────────────────
-    // 
+    //
     trk_.isHighPurityTrack.push_back(trk.isHighPurityTrack());
     trk_.isTightTrack.push_back(trk.isTightTrack());
     trk_.isLooseTrack.push_back(trk.isLooseTrack());
@@ -958,12 +1070,14 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     // ── dE/dx & calo ─────────────────────────────────────────────────────────
     trk_.dEdxStrip.push_back(trk.dEdxStrip());
     trk_.dEdxPixel.push_back(trk.dEdxPixel());
-    const float caloEm  = trk.matchedCaloJetEmEnergy();
+    const float caloEm = trk.matchedCaloJetEmEnergy();
     const float caloHad = trk.matchedCaloJetHadEnergy();
     const float caloTot = caloEm + caloHad;
-    // PU-corrected calo energy: max(0, E_raw - rho * pi * dR^2), dR=0.4, CentralCalo rho
-    // Mirrors caloNewFromCaloJetNoPUDRp4CentralCalo from the old OSUT3Analysis framework.
-    const float caloTotNoPU = std::max(0.f, caloTot - (float)(rho_centralCalo_ * M_PI * 0.4 * 0.4));
+    // PU-corrected calo energy: max(0, E_raw - rho * pi * dR^2), dR=0.4,
+    // CentralCalo rho Mirrors caloNewFromCaloJetNoPUDRp4CentralCalo from the
+    // old OSUT3Analysis framework.
+    const float caloTotNoPU =
+        std::max(0.f, caloTot - (float)(rho_centralCalo_ * M_PI * 0.4 * 0.4));
     trk_.caloEm.push_back(caloEm);
     trk_.caloHad.push_back(caloHad);
     trk_.caloTotal.push_back(caloTot);
@@ -1003,9 +1117,11 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     using HP = reco::HitPattern;
 
     // Convenience aliases matching old-framework variable names
-    const int mmInner = hp.trackerLayersWithoutMeasurement(HP::MISSING_INNER_HITS);
+    const int mmInner =
+        hp.trackerLayersWithoutMeasurement(HP::MISSING_INNER_HITS);
     const int mmMiddle = hp.trackerLayersWithoutMeasurement(HP::TRACK_HITS);
-    const int mmOuter = hp.trackerLayersWithoutMeasurement(HP::MISSING_OUTER_HITS);
+    const int mmOuter =
+        hp.trackerLayersWithoutMeasurement(HP::MISSING_OUTER_HITS);
     trk_.missingInnerHits.push_back(mmInner);
     trk_.missingMiddleHits.push_back(mmMiddle);
     trk_.missingOuterHits.push_back(mmOuter);
@@ -1175,18 +1291,15 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.hp_numberOfValidTECLayersWithMonoAndStereo.push_back(
         hp.numberOfValidTECLayersWithMonoAndStereo());
 
-
-
     // Min DR to bad ECAL channels
     double minDR = -1.0;
-        for (const auto& entry : maskedEcalChannels_) {
-            const double dR = reco::deltaR(
-                trk.eta(), trk.phi(),
-                entry.second.first, entry.second.second);
-            if (minDR < 0.0 || dR < minDR) minDR = dR;
-        }
-        trk_.minDRToMaskedEcal.push_back(static_cast<float>(minDR));
-
+    for (const auto &entry : maskedEcalChannels_) {
+      const double dR = reco::deltaR(trk.eta(), trk.phi(), entry.second.first,
+                                     entry.second.second);
+      if (minDR < 0.0 || dR < minDR)
+        minDR = dR;
+    }
+    trk_.minDRToMaskedEcal.push_back(static_cast<float>(minDR));
   }
   // ── Fill jets
   for (const auto &jet : *jets) {
@@ -1200,23 +1313,22 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     bool passesTightLepVeto = false;
 
     if (absEta <= 2.6)
-      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.99
-        && jet.neutralEmEnergyFraction() < 0.9
-        && jet.numberOfDaughters() > 1
-        && jet.muonEnergyFraction() < 0.8
-        && jet.chargedHadronEnergyFraction() > 0.01
-        && jet.chargedMultiplicity() > 0
-        && jet.chargedEmEnergyFraction() < 0.8;
+      passesTightLepVeto =
+          jet.neutralHadronEnergyFraction() < 0.99 &&
+          jet.neutralEmEnergyFraction() < 0.9 && jet.numberOfDaughters() > 1 &&
+          jet.muonEnergyFraction() < 0.8 &&
+          jet.chargedHadronEnergyFraction() > 0.01 &&
+          jet.chargedMultiplicity() > 0 && jet.chargedEmEnergyFraction() < 0.8;
     else if (absEta <= 2.7)
-      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.9
-        && jet.neutralEmEnergyFraction() < 0.99
-        && jet.muonEnergyFraction() < 0.8
-        && jet.chargedEmEnergyFraction() < 0.8;
+      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.9 &&
+                           jet.neutralEmEnergyFraction() < 0.99 &&
+                           jet.muonEnergyFraction() < 0.8 &&
+                           jet.chargedEmEnergyFraction() < 0.8;
     else if (absEta <= 3.0)
       passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.99;
     else
-      passesTightLepVeto = jet.neutralEmEnergyFraction() < 0.4
-        && jet.neutralMultiplicity() >= 2;
+      passesTightLepVeto =
+          jet.neutralEmEnergyFraction() < 0.4 && jet.neutralMultiplicity() >= 2;
 
     jet_.isTightLepVeto.push_back(passesTightLepVeto);
   }
