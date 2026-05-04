@@ -9,6 +9,7 @@ isTightLepVeto, hit pattern, calo isolation, etc.) are stored as branches.
 Event-level filters applied in the path:
   - HLT trigger filter
   - MET filters (goodVertices, halo, ECAL/HCAL noise, eeBadSc, ecalBadCalib)
+  - Jet Veto Map
 """
 import os
 import FWCore.ParameterSet.Config as cms
@@ -16,36 +17,10 @@ from Configuration.AlCa.GlobalTag import GlobalTag
 from FWCore.ParameterSet.VarParsing import VarParsing
 from DisappTrks_v2.BkgdEstimation.EcalBadCalibFilter_cff import addEcalBadCalibFilter
 
+# VarParsing allows you to configure the cfg file from the command-line. The format
+# for using these options are:
+# cmsRun ntuplizer_cfg.py year=2023 trigger=SingleElectron inputFiles=myInputFile.root maxEvents=1000
 options = VarParsing("analysis")
-
-options.register(
-    "electronFiducialMap",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "Path to electron fiducial map",
-)
-options.register(
-    "muonFiducialMap",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "Path to muon fiducial map",
-)
-options.register(
-    "muonTriggerFilterName",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "Last filter label for muon trigger matching",
-)
-options.register(
-    "electronTriggerFilterName",
-    "",
-    VarParsing.multiplicity.singleton,
-    VarParsing.varType.string,
-    "Last filter label for electron trigger matching",
-)
 options.register(
     "year",
     "",
@@ -62,7 +37,7 @@ options.register(
 )
 options.parseArguments()
 
-
+# Require that the trigger and year are set, otherwise the script will crash out
 def require(name, value):
     if not value:
         raise RuntimeError(
@@ -70,9 +45,8 @@ def require(name, value):
             f"Usage: cmsRun cfg.py {name}=<value>"
         )
 
-#require("electronFiducialMap", options.electronFiducialMap)
-#require("muonFiducialMap",     options.muonFiducialMap)
 require("trigger", options.trigger)
+require("year", options.trigger)
 
 # Define trigger sets
 triggerPaths = {
@@ -112,9 +86,12 @@ processName = "NTuplizer"
 process = cms.Process(processName)
 process.options = cms.untracked.PSet(wantSummary=cms.untracked.bool(True))
 
+# Sets up the geometry of the detector
 process.load("Configuration.StandardSequences.FrontierConditions_GlobalTag_cff")
 process.load("Configuration.StandardSequences.GeometryDB_cff")
 process.load("Configuration.StandardSequences.MagneticField_AutoFromDBCurrent_cff")
+# This is needed to be set in order for the code to run.
+# Gets rid of CASTOR which was causing issues
 process.CaloGeometryBuilder.SelectedCalos = [
     "HCAL",
     "ZDC",
@@ -124,6 +101,7 @@ process.CaloGeometryBuilder.SelectedCalos = [
     "TOWER",
 ]
 
+# Sets the global tag, needs to be set manually for now!
 # 2025: 150X_dataRun3_Prompt_v1
 # 2024: 150X_dataRun3_v2
 data_global_tag = '150X_dataRun3_Prompt_v1'
@@ -141,6 +119,8 @@ process.maxEvents = cms.untracked.PSet(input=cms.untracked.int32(options.maxEven
 
 process.TFileService = cms.Service("TFileService", fileName=cms.string("ntuple.root"))
 
+# Handles the additional masking of ECAL channels that was stated in
+# this Twiki: https://twiki.cern.ch/twiki/bin/viewauth/CMS/MissingETOptionalFiltersRun2#Run_3_2024_data_and_MC_Recommend
 ecalBadCalibFilter = addEcalBadCalibFilter(process, options.year)
 
 process.hltFilter = cms.EDFilter(
@@ -169,63 +149,31 @@ process.metFilters = cms.EDFilter("HLTHighLevel",
     ),
 )
 
-# ── TrackElectronFiducialFilter ───────────────────────────────────────────────
-# Consumes: ("ZtoProbeTrkTrackSelections", "probeTracks")
-# Produces: ("TrackElectronFiducialFilter", "fiducialTracks")
-process.TrackElectronFiducialFilter = cms.EDFilter(
-    "TrackFiducialFilter",
-    tracks=cms.InputTag("isolatedTracks"),
-    useEraByEraFiducialMaps=cms.bool(False),
-    fiducialMaps=cms.VPSet(
-        cms.PSet(
-            histFile=cms.FileInPath(options.electronFiducialMap),
-            beforeVetoHistName=cms.string("beforeVeto"),
-            afterVetoHistName=cms.string("afterVeto"),
-            thresholdForVeto=cms.double(2.0),
-        ),
-    ),
-)
-
-# ── TrackMuonFiducialFilter ───────────────────────────────────────────────────
-# Consumes: ("TrackElectronFiducialFilter", "fiducialTracks")
-# Produces: ("TrackMuonFiducialFilter", "fiducialTracks")
-process.TrackMuonFiducialFilter = cms.EDFilter(
-    "TrackFiducialFilter",
-    tracks=cms.InputTag("TrackElectronFiducialFilter:fiducialTracks"),
-    useEraByEraFiducialMaps=cms.bool(False),
-    fiducialMaps=cms.VPSet(
-        cms.PSet(
-            histFile=cms.FileInPath(options.muonFiducialMap),
-            beforeVetoHistName=cms.string("beforeVeto"),
-            afterVetoHistName=cms.string("afterVeto"),
-            thresholdForVeto=cms.double(2.0),
-        ),
-    ),
-)
-
 # ── TrackEcalDeadChannelFilter ────────────────────────────────────────────────
-# Consumes: ("TrackMuonFiducialFilter", "fiducialTracks")
+# Consumes: (isolatedTracks)
 # Produces: ("TrackEcalDeadChannelFilter", "ecalTracks")
 process.TrackEcalDeadChannelFilter = cms.EDFilter("TrackEcalDeadChannelFilter",
-    # Value for 2024 where fiducial maps are available
-    #tracks                           = cms.InputTag("TrackMuonFiducialFilter:fiducialTracks"),
     tracks                           = cms.InputTag("isolatedTracks"),
     maskedEcalChannelStatusThreshold = cms.int32(3),
     minDeltaR                        = cms.double(0.05),
 )
 
+# This loads in the configuration fragments that are stored in the python directory
 process.load("DisappTrks_v2.BkgdEstimation.JecAppliedJetProducer_cfi")
 process.load("DisappTrks_v2.BkgdEstimation.JecAppliedMetProducer_cfi")
 process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 
+
+# Allows you to set that year that should be used for the JEC and JVM values.
+# In 2024 and 2025, the key is of the format Era2024All and Era2025All.
+# In 2023 the format is Era2023PreAll and Era2023PostAll to signify 2023C and 2023D
+# In 2022 the keys for year and era are formatted differently so this will need to be changed
+# To see the format of the keys, check JecConfigAK4.json
 process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)
 process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
-#process.jecAppliedMetProducer.Jets.Era = cms.string("Era2022C") # Does only work for 2024 & 25 data
 process.jecAppliedJetProducer.Jets.Year = cms.string(options.year)
 process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All")
-#process.jecAppliedJetProducer.Jets.Era = cms.string("Era2022C")
 process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)
-
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     tracks       = cms.InputTag("isolatedTracks"),
@@ -256,8 +204,8 @@ process.p = cms.Path(
     process.hltFilter *
     process.metFilters *
     process.ecalBadCalibReducedMINIAODFilter*
-    #process.TrackEcalDeadChannelFilter *
-    #process.JvmAppliedEventFilter *
+    process.TrackEcalDeadChannelFilter *
+    process.JvmAppliedEventFilter *
     process.jecAppliedJetProducer *
     process.jecAppliedMetProducer *
     process.ntuplizer
