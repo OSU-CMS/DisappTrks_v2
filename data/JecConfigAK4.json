@@ -634,19 +634,19 @@
     "ApplyOnData": {
       "JesNominal": {
         "Era2022E": {
-          "tagNameL1FastJet": "Summer22EE_22Sep2023_RunE_V3_DATA_L1FastJet_AK4PFPuppi",
-          "tagNameL2Relative": "Summer22EE_22Sep2023_RunE_V3_DATA_L2Relative_AK4PFPuppi",
-          "tagNameL2L3Residual": "Summer22EE_22Sep2023_RunE_V3_DATA_L2L3Residual_AK4PFPuppi"
+          "tagNameL1FastJet": "Summer22EE_22Sep2023_V3_DATA_L1FastJet_AK4PFPuppi",
+          "tagNameL2Relative": "Summer22EE_22Sep2023_V3_DATA_L2Relative_AK4PFPuppi",
+          "tagNameL2L3Residual": "Summer22EE_22Sep2023_V3_DATA_L2L3Residual_AK4PFPuppi"
         },
         "Era2022F": {
-          "tagNameL1FastJet": "Summer22EE_22Sep2023_RunF_V3_DATA_L1FastJet_AK4PFPuppi",
-          "tagNameL2Relative": "Summer22EE_22Sep2023_RunF_V3_DATA_L2Relative_AK4PFPuppi",
-          "tagNameL2L3Residual": "Summer22EE_22Sep2023_RunF_V3_DATA_L2L3Residual_AK4PFPuppi"
+          "tagNameL1FastJet": "Summer22EE_22Sep2023_V3_DATA_L1FastJet_AK4PFPuppi",
+          "tagNameL2Relative": "Summer22EE_22Sep2023_V3_DATA_L2Relative_AK4PFPuppi",
+          "tagNameL2L3Residual": "Summer22EE_22Sep2023_V3_DATA_L2L3Residual_AK4PFPuppi"
         },
         "Era2022G": {
-          "tagNameL1FastJet": "Summer22EE_22Sep2023_RunG_V3_DATA_L1FastJet_AK4PFPuppi",
-          "tagNameL2Relative": "Summer22EE_22Sep2023_RunG_V3_DATA_L2Relative_AK4PFPuppi",
-          "tagNameL2L3Residual": "Summer22EE_22Sep2023_RunG_V3_DATA_L2L3Residual_AK4PFPuppi"
+          "tagNameL1FastJet": "Summer22EE_22Sep2023_V3_DATA_L1FastJet_AK4PFPuppi",
+          "tagNameL2Relative": "Summer22EE_22Sep2023_V3_DATA_L2Relative_AK4PFPuppi",
+          "tagNameL2L3Residual": "Summer22EE_22Sep2023_V3_DATA_L2L3Residual_AK4PFPuppi"
         }
       }
     },

@@ -10,6 +10,11 @@ Event-level filters applied in the path:
   - HLT trigger filter
   - MET filters (goodVertices, halo, ECAL/HCAL noise, eeBadSc, ecalBadCalib)
   - Jet Veto Map
+
+This file is currently hard-coded for 2022 data (22Sep2023 re-miniAOD), with
+the original 2024/2025 settings commented out and marked "newer data". The
+2022 numbers (Global Tags, JEC eras, JVM keys, MET-filter process name,
+trigger list, electron ID label) follow AN-2024-155 v4 §2-4.
 """
 import os
 import FWCore.ParameterSet.Config as cms
@@ -46,7 +51,7 @@ def require(name, value):
         )
 
 require("trigger", options.trigger)
-require("year", options.trigger)
+require("year", options.year)
 
 # Define trigger sets
 triggerPaths = {
@@ -104,8 +109,25 @@ process.CaloGeometryBuilder.SelectedCalos = [
 # Sets the global tag, needs to be set manually for now!
 # 2025: 150X_dataRun3_Prompt_v1
 # 2024: 150X_dataRun3_v2
-data_global_tag = '150X_dataRun3_Prompt_v1'
-mc_global_tag   = '150X_mcRun3_2024_realistic_v2'
+#
+# 2022 — values taken from AN-2024-155 v4, section 2.1 / 2.2.
+#   Analysis CMSSW: CMSSW_13_0_13. Inputs are the 22Sep2023 re-miniAOD.
+#   Lumi JSON: Cert_Collisions2022_355100_362760_Golden.json
+#
+#   DATA GTs used in the AN for 2022 (both appear; PromptAnalysis_v1 is also
+#   the GT used for 2023, so it's the safer default if you're not sure):
+#     130X_dataRun3_v2
+#     130X_dataRun3_PromptAnalysis_v1
+#
+#   MC GTs (Run3Summer22MiniAODv4 / Run3Summer22EEMiniAODv4 MiniAOD step):
+#     pre-EE  (eras C, D)   : 130X_mcRun3_2022_realistic_v5
+#     post-EE (eras E, F, G): 130X_mcRun3_2022_realistic_postEE_v6
+#
+# data_global_tag = '150X_dataRun3_Prompt_v1'                 # 24newer data
+# mc_global_tag   = '150X_mcRun3_2024_realistic_v2'           # 24 newer data
+data_global_tag = '130X_dataRun3_PromptAnalysis_v1'        #Did Mike use this for 2022 data?
+#data_global_tag = '130X_dataRun3_V2'
+mc_global_tag   = '130X_mcRun3_2022_realistic_postEE_v6'   # change to ...realistic_v5 for 2022 C/D MC
 MC = False
 process.GlobalTag = GlobalTag(
     process.GlobalTag, mc_global_tag if MC else data_global_tag, ""
@@ -133,7 +155,8 @@ process.hltFilter = cms.EDFilter(
 )
 
 process.metFilters = cms.EDFilter("HLTHighLevel",
-    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "RECO"), # Should be RECO for 2025 and PAT for 2024
+    # TriggerResultsTag  = cms.InputTag("TriggerResults", "", "RECO"), # Should be RECO for 2025 and PAT for 2024  # newer data
+    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "PAT"),  # 2022 22Sep2023 re-reco MINIAOD uses PAT
     eventSetupPathsKey = cms.string(""),
     andOr              = cms.bool(False),   # AND — must pass all filters
     throw              = cms.bool(False),
@@ -167,13 +190,34 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 # Allows you to set that year that should be used for the JEC and JVM values.
 # In 2024 and 2025, the key is of the format Era2024All and Era2025All.
 # In 2023 the format is Era2023PreAll and Era2023PostAll to signify 2023C and 2023D
-# In 2022 the keys for year and era are formatted differently so this will need to be changed
-# To see the format of the keys, check JecConfigAK4.json
-process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)
-process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
-process.jecAppliedJetProducer.Jets.Year = cms.string(options.year)
-process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All")
-process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)
+# In 2022 the keys are split into 2022Pre (Run C/D) and 2022Post (Run E/F/G),
+#   with per-run era keys Era2022C/D/E/F/G (no *All key exists for 2022).
+#
+# The 2022 pre-/post-EE split (and the corresponding JVM map split) matches
+# the analysis split in AN-2024-155 v4 §2.2: eras C, D = pre-EE; eras E, F, G
+# = post-EE (ECAL endcap water leak). The JVM map for 2022Post is the JME-POG
+# recommended Summer22EE_23Sep2023_RunEFG_V1, which already encodes the EFG
+# water-leak veto region described in AN §4.2.
+# To see the format of the keys, check JecConfigAK4.json.
+#
+# Hard-coded here for 2022 Run G (post-EE). Change jec_year_key / jec_era_key
+# to match the era of the input file:
+#   2022Pre  -> Era2022C, Era2022D
+#   2022Post -> Era2022E, Era2022F, Era2022G
+jec_year_key = "2022Post"
+jec_era_key  = "Era2022E"
+jvm_year_key = "2022Post"
+
+# process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)                              # newer data
+# process.jecAppliedMetProducer.Jets.Era  = cms.string("Era" + options.year + "All")              # newer data
+# process.jecAppliedJetProducer.Jets.Year = cms.string(options.year)                              # newer data
+# process.jecAppliedJetProducer.Jets.Era  = cms.string("Era" + options.year + "All")              # newer data
+# process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)                              # newer data
+process.jecAppliedMetProducer.Jets.Year = cms.string(jec_year_key)
+process.jecAppliedMetProducer.Jets.Era  = cms.string(jec_era_key)
+process.jecAppliedJetProducer.Jets.Year = cms.string(jec_year_key)
+process.jecAppliedJetProducer.Jets.Era  = cms.string(jec_era_key)
+process.JvmAppliedEventFilter.Jets.Year = cms.string(jvm_year_key)
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     tracks       = cms.InputTag("isolatedTracks"),
