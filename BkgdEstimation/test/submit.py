@@ -147,6 +147,7 @@ def submit_one(entry):
     lumi_mask    = LUMI_MASKS[base_year(year)]
     request_name = key.replace(".", "_")[-100:]
 
+    full_year = f"{year}{era}"
 
     input_files = [
         #ele_abs,
@@ -168,7 +169,7 @@ config.General.transferLogs    = True
 config.JobType.pluginName  = 'Analysis'
 config.JobType.psetName    = '{CFG_PATH}'
 config.JobType.pyCfgParams = [
-    'year={year}',
+    'year={full_year}',
     'trigger={trigger}',
 ]
 config.JobType.inputFiles = [
@@ -180,8 +181,8 @@ config.JobType.maxMemoryMB = 2500
 
 config.Data.inputDataset     = '{dataset}'
 config.Data.inputDBS         = 'global'
-config.Data.splitting        = 'Automatic'
-config.Data.unitsPerJob      = 180
+config.Data.splitting        = 'LumiBased'
+config.Data.unitsPerJob      = 50
 config.Data.lumiMask         = '{lumi_mask}'
 config.Data.outLFNDirBase    = '{CRAB_OUTPUT_BASE}'
 config.Data.publication      = False

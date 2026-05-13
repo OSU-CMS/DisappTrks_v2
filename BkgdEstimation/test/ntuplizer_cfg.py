@@ -46,7 +46,7 @@ def require(name, value):
         )
 
 require("trigger", options.trigger)
-require("year", options.trigger)
+require("year", options.year)
 
 # Define trigger sets
 triggerPaths = {
@@ -104,12 +104,13 @@ process.CaloGeometryBuilder.SelectedCalos = [
 # Sets the global tag, needs to be set manually for now!
 # 2025: 150X_dataRun3_Prompt_v1
 # 2024: 150X_dataRun3_v2
-data_global_tag = '150X_dataRun3_Prompt_v1'
+data_global_tag = '130X_dataRun3_PromptAnalysis_v1'
 mc_global_tag   = '150X_mcRun3_2024_realistic_v2'
 MC = False
 process.GlobalTag = GlobalTag(
     process.GlobalTag, mc_global_tag if MC else data_global_tag, ""
 )
+#process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:run3_data_prompt', '')
 
 process.source = cms.Source(
     "PoolSource", fileNames=cms.untracked.vstring(options.inputFiles)
@@ -169,11 +170,31 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 # In 2023 the format is Era2023PreAll and Era2023PostAll to signify 2023C and 2023D
 # In 2022 the keys for year and era are formatted differently so this will need to be changed
 # To see the format of the keys, check JecConfigAK4.json
-process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)
-process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
-process.jecAppliedJetProducer.Jets.Year = cms.string(options.year)
-process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All")
-process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)
+if options.year == "2023C":
+    jec_year = "2023Pre"
+elif options.year == "2023D":
+    jec_year = "2023Post"
+process.jecAppliedMetProducer.Jets.Year = cms.string(jec_year)
+#process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
+process.jecAppliedJetProducer.Jets.Year = cms.string(jec_year)
+#process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All")
+process.JvmAppliedEventFilter.Jets.Year = cms.string(jec_year)
+
+eraMap = {
+    "2023C": "Era2023PreAll",
+    "2023D": "Era2023PostAll",
+    "2024":  "Era2024All",
+    "2025":  "Era2025All",
+}
+
+eraKey = eraMap.get(options.year, "")
+if not eraKey:
+    raise RuntimeError(f"Unknown year key for JEC: {options.year}")
+
+process.jecAppliedMetProducer.Jets.Era = cms.string(eraKey)
+process.jecAppliedJetProducer.Jets.Era = cms.string(eraKey)
+process.JvmAppliedEventFilter.Jets.Era = cms.string(eraKey)
+
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     tracks       = cms.InputTag("isolatedTracks"),
