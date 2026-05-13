@@ -25,6 +25,7 @@ from DisappTrks_v2.BkgdEstimation.EcalBadCalibFilter_cff import addEcalBadCalibF
 # VarParsing allows you to configure the cfg file from the command-line. The format
 # for using these options are:
 # cmsRun ntuplizer_cfg.py year=2023 trigger=SingleElectron inputFiles=myInputFile.root maxEvents=1000
+# 2022 muon (era E): cmsRun ntuplizer_cfg.py     year=2022  era=E    trigger=SingleMuon     inputFiles=root://cms-xrd-global.cern.ch//store/data/Run2022E/Muon/MINIAOD/22Sep2023-v1/40000/ed79ec62-dffb-4ea1-935d-3e1b4cc047bd.root     maxEvents=1000
 options = VarParsing("analysis")
 options.register(
     "year",
@@ -40,6 +41,13 @@ options.register(
     VarParsing.varType.string,
     "Trigger selection: 'MET', 'SingleElectron', or 'SingleMuon'",
 )
+options.register(
+    "era",
+    "",
+    VarParsing.multiplicity.singleton,
+    VarParsing.varType.string,
+    "Single-letter data-taking era (C, D, …); required for year=2022 with correct JEC/JVM keys.",
+)
 options.parseArguments()
 
 # Require that the trigger and year are set, otherwise the script will crash out
@@ -52,6 +60,27 @@ def require(name, value):
 
 require("trigger", options.trigger)
 require("year", options.year)
+
+# JEC/JVM keys for 2022 (must match submit.py pyCfgParams era=… and JecConfigAK4.json).
+if options.year == "2022":
+    require("era", options.era)
+    era_ch = options.era.strip().upper()[:1]
+    if era_ch not in ("C", "D", "E", "F", "G"):
+        raise RuntimeError(
+            f"Invalid era={options.era!r} for year=2022 (expected one of C–G)."
+        )
+    jec_era_key = f"Era2022{era_ch}"
+    if era_ch in ("C", "D"):
+        jec_year_key = "2022Pre"
+        jvm_year_key = "2022Pre"
+    else:
+        jec_year_key = "2022Post"
+        jvm_year_key = "2022Post"
+else:
+    #FIXME: this is a hack to get the code to run. We need to change this to the correct year and era.
+    jec_year_key = "2022Pre"
+    jec_era_key = "Era2022C"
+    jvm_year_key = "2022Pre"
 
 # Define trigger sets
 triggerPaths = {
@@ -125,9 +154,19 @@ process.CaloGeometryBuilder.SelectedCalos = [
 #
 # data_global_tag = '150X_dataRun3_Prompt_v1'                 # 24newer data
 # mc_global_tag   = '150X_mcRun3_2024_realistic_v2'           # 24 newer data
-data_global_tag = '130X_dataRun3_PromptAnalysis_v1'        #Did Mike use this for 2022 data?
-#data_global_tag = '130X_dataRun3_V2'
-mc_global_tag   = '130X_mcRun3_2022_realistic_postEE_v6'   # change to ...realistic_v5 for 2022 C/D MC
+
+if options.year == "2022" and (options.era == "C" or options.era == "D"):
+    data_global_tag = '130X_dataRun3_v2' #use lowercase v2 for 2022 C/D data
+elif options.year == "2022" and (
+    options.era == "E" or options.era == "F" or options.era == "G"
+):
+    data_global_tag = '130X_dataRun3_PromptAnalysis_v1'
+else:
+    raise RuntimeError(f"Invalid year={options.year} and era={options.era} combination.")
+    quit()
+
+
+mc_global_tag   = '130X_mcRun3_2022_realistic_postEE_v6'   # change to ...realistic_v5 for 2022 C/D MC. since we MC = false, we can ingnore this line.
 MC = False
 process.GlobalTag = GlobalTag(
     process.GlobalTag, mc_global_tag if MC else data_global_tag, ""
@@ -200,13 +239,17 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 # water-leak veto region described in AN §4.2.
 # To see the format of the keys, check JecConfigAK4.json.
 #
-# Hard-coded here for 2022 Run G (post-EE). Change jec_year_key / jec_era_key
-# to match the era of the input file:
-#   2022Pre  -> Era2022C, Era2022D
-#   2022Post -> Era2022E, Era2022F, Era2022G
-jec_year_key = "2022Post"
-jec_era_key  = "Era2022E"
-jvm_year_key = "2022Post"
+# NOTE for running over all 2022 data later:
+#   do not mix Run2022C/D/E/F/G in one cmsRun job while keeping a single
+#   hard-coded JEC/JVM choice. Instead, run this cfg separately per run era
+#   (or at least separately for 2022Pre vs 2022Post) and merge the ntuples
+#   afterward. In practice:
+#     Run2022C, Run2022D -> jec_year_key/jvm_year_key = "2022Pre"
+#     Run2022E, Run2022F, Run2022G -> jec_year_key/jvm_year_key = "2022Post"
+#   and set jec_era_key to the matching era ("Era2022C", ..., "Era2022G")
+#   for the dataset being processed.
+#
+# jec_year_key / jec_era_key / jvm_year_key for year==2022 are set above from options.era.
 
 # process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)                              # newer data
 # process.jecAppliedMetProducer.Jets.Era  = cms.string("Era" + options.year + "All")              # newer data
