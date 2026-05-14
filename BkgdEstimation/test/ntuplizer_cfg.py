@@ -62,6 +62,10 @@ require("trigger", options.trigger)
 require("year", options.year)
 
 # JEC/JVM keys for 2022 (must match submit.py pyCfgParams era=… and JecConfigAK4.json).
+# NOTE: JecConfigAK4.json no longer has per-run-era 2022 keys (Era2022C/D/E/F/G).
+# 2022 data is collapsed into two ApplyOnData keys:
+#   Era2022PreAll  -> covers runs C, D   (year key "2022Pre")
+#   Era2022PostAll -> covers runs E, F, G (year key "2022Post")
 if options.year == "2022":
     require("era", options.era)
     era_ch = options.era.strip().upper()[:1]
@@ -69,17 +73,18 @@ if options.year == "2022":
         raise RuntimeError(
             f"Invalid era={options.era!r} for year=2022 (expected one of C–G)."
         )
-    jec_era_key = f"Era2022{era_ch}"
     if era_ch in ("C", "D"):
         jec_year_key = "2022Pre"
+        jec_era_key  = "Era2022PreAll"
         jvm_year_key = "2022Pre"
     else:
         jec_year_key = "2022Post"
+        jec_era_key  = "Era2022PostAll"
         jvm_year_key = "2022Post"
 else:
     #FIXME: this is a hack to get the code to run. We need to change this to the correct year and era.
     jec_year_key = "2022Pre"
-    jec_era_key = "Era2022C"
+    jec_era_key  = "Era2022PreAll"
     jvm_year_key = "2022Pre"
 
 # Define trigger sets
@@ -155,12 +160,12 @@ process.CaloGeometryBuilder.SelectedCalos = [
 # data_global_tag = '150X_dataRun3_Prompt_v1'                 # 24newer data
 # mc_global_tag   = '150X_mcRun3_2024_realistic_v2'           # 24 newer data
 
-if options.year == "2022" and (options.era == "C" or options.era == "D"):
-    data_global_tag = '130X_dataRun3_v2' #use lowercase v2 for 2022 C/D data
+if options.year == "2022" and (options.era == "C" or options.era == "D" or options.era == "E"):
+    data_global_tag = '124X_dataRun3_v15' #use lowercase v2 for 2022 C/D data
 elif options.year == "2022" and (
-    options.era == "E" or options.era == "F" or options.era == "G"
+      options.era == "F" or options.era == "G"
 ):
-    data_global_tag = '130X_dataRun3_PromptAnalysis_v1'
+    data_global_tag = '124X_dataRun3_PromptAnalysis_v2'
 else:
     raise RuntimeError(f"Invalid year={options.year} and era={options.era} combination.")
     quit()
@@ -228,9 +233,10 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 
 # Allows you to set that year that should be used for the JEC and JVM values.
 # In 2024 and 2025, the key is of the format Era2024All and Era2025All.
-# In 2023 the format is Era2023PreAll and Era2023PostAll to signify 2023C and 2023D
+# In 2023 the format is Era2023PreAll and Era2023PostAll to signify 2023C and 2023D.
 # In 2022 the keys are split into 2022Pre (Run C/D) and 2022Post (Run E/F/G),
-#   with per-run era keys Era2022C/D/E/F/G (no *All key exists for 2022).
+#   with ApplyOnData era keys Era2022PreAll and Era2022PostAll. No per-run
+#   era keys (Era2022C/D/E/F/G) exist in JecConfigAK4.json.
 #
 # The 2022 pre-/post-EE split (and the corresponding JVM map split) matches
 # the analysis split in AN-2024-155 v4 §2.2: eras C, D = pre-EE; eras E, F, G
@@ -244,10 +250,10 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 #   hard-coded JEC/JVM choice. Instead, run this cfg separately per run era
 #   (or at least separately for 2022Pre vs 2022Post) and merge the ntuples
 #   afterward. In practice:
-#     Run2022C, Run2022D -> jec_year_key/jvm_year_key = "2022Pre"
-#     Run2022E, Run2022F, Run2022G -> jec_year_key/jvm_year_key = "2022Post"
-#   and set jec_era_key to the matching era ("Era2022C", ..., "Era2022G")
-#   for the dataset being processed.
+#     Run2022C, Run2022D       -> jec_year_key/jvm_year_key = "2022Pre",
+#                                 jec_era_key = "Era2022PreAll"
+#     Run2022E, Run2022F, G    -> jec_year_key/jvm_year_key = "2022Post",
+#                                 jec_era_key = "Era2022PostAll"
 #
 # jec_year_key / jec_era_key / jvm_year_key for year==2022 are set above from options.era.
 
