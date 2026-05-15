@@ -80,7 +80,40 @@ if options.trigger not in triggerPaths:
         f"Unknown trigger '{options.trigger}'. "
         f"Choose from: {list(triggerPaths.keys())}"
     )
+def _ecal_year(year_or_era):
+    value = str(year_or_era).strip()
 
+    # explicit Run 3 handling
+    if value.startswith("2022"):
+        return "2022"
+    if value.startswith("2023"):
+        return "2023"
+    if value.startswith("2024"):
+        return "2024"
+    if value.startswith("2025"):
+        return "2025"
+
+def resolve_jec_tag(year, trigger):
+    """
+    Maps dataset year → JEC Year/Era strings used by JecConfigAK4.json
+    """
+
+    # 2023 split runs
+    if year == "2023C" or year == "2023Pre":
+        return "2023Pre", "Era2023PreAll"
+
+    if year == "2023D" or year == "2023Post":
+        return "2023Post", "Era2023PostAll"
+
+    # 2024 (single era in most JEC configs)
+    if "2024" in year:
+        return "2024", "Era2024All"
+
+    # 2025 (same pattern as 2024 in most private JEC configs)
+    if "2025" in year:
+        return "2025", "Era2025All"
+
+    raise RuntimeError(f"Unsupported year for JEC mapping: {year}")
 
 processName = "NTuplizer"
 process = cms.Process(processName)
@@ -104,7 +137,8 @@ process.CaloGeometryBuilder.SelectedCalos = [
 # Sets the global tag, needs to be set manually for now!
 # 2025: 150X_dataRun3_Prompt_v1
 # 2024: 150X_dataRun3_v2
-data_global_tag = '130X_dataRun3_PromptAnalysis_v1'
+# 2023: 130X_dataRun3_PromptAnalysis_v1
+data_global_tag = '150X_dataRun3_Prompt_v1'
 mc_global_tag   = '150X_mcRun3_2024_realistic_v2'
 MC = False
 process.GlobalTag = GlobalTag(
@@ -122,7 +156,7 @@ process.TFileService = cms.Service("TFileService", fileName=cms.string("ntuple.r
 
 # Handles the additional masking of ECAL channels that was stated in
 # this Twiki: https://twiki.cern.ch/twiki/bin/viewauth/CMS/MissingETOptionalFiltersRun2#Run_3_2024_data_and_MC_Recommend
-ecalBadCalibFilter = addEcalBadCalibFilter(process, options.year)
+#ecalBadCalibFilter = addEcalBadCalibFilter(process, _ecal_year(options.year))
 
 process.hltFilter = cms.EDFilter(
     "HLTHighLevel",
@@ -170,30 +204,40 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 # In 2023 the format is Era2023PreAll and Era2023PostAll to signify 2023C and 2023D
 # In 2022 the keys for year and era are formatted differently so this will need to be changed
 # To see the format of the keys, check JecConfigAK4.json
-if options.year == "2023C":
-    jec_year = "2023Pre"
-elif options.year == "2023D":
-    jec_year = "2023Post"
+jec_year, jec_era = resolve_jec_tag(options.year, options.trigger)
+
 process.jecAppliedMetProducer.Jets.Year = cms.string(jec_year)
-#process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
+process.jecAppliedMetProducer.Jets.Era  = cms.string(jec_era)
+
 process.jecAppliedJetProducer.Jets.Year = cms.string(jec_year)
-#process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All")
+process.jecAppliedJetProducer.Jets.Era  = cms.string(jec_era)
+
 process.JvmAppliedEventFilter.Jets.Year = cms.string(jec_year)
 
-eraMap = {
-    "2023C": "Era2023PreAll",
-    "2023D": "Era2023PostAll",
-    "2024":  "Era2024All",
-    "2025":  "Era2025All",
-}
+#if options.year == "2023C":
+#    jec_year = "2023Pre"
+#elif options.year == "2023D":
+#    jec_year = "2023Post"
+#process.jecAppliedMetProducer.Jets.Year = cms.string(jec_year)
+#process.jecAppliedMetProducer.Jets.Era = cms.string("Era" + options.year + "All") # Does only work for 2024 & 25 data
+#process.jecAppliedJetProducer.Jets.Year = cms.string(jec_year)
+#process.jecAppliedJetProducer.Jets.Era = cms.string("Era" + options.year + "All")
+#process.JvmAppliedEventFilter.Jets.Year = cms.string(jec_year)
 
-eraKey = eraMap.get(options.year, "")
-if not eraKey:
-    raise RuntimeError(f"Unknown year key for JEC: {options.year}")
+#eraMap = {
+#    "2023C": "Era2023PreAll",
+#    "2023D": "Era2023PostAll",
+#    "2024":  "Era2024All",
+#    "2025":  "Era2025All",
+#}
 
-process.jecAppliedMetProducer.Jets.Era = cms.string(eraKey)
-process.jecAppliedJetProducer.Jets.Era = cms.string(eraKey)
-process.JvmAppliedEventFilter.Jets.Era = cms.string(eraKey)
+#eraKey = eraMap.get(options.year, "")
+#if not eraKey:
+#    raise RuntimeError(f"Unknown year key for JEC: {options.year}")
+
+#process.jecAppliedMetProducer.Jets.Era = cms.string(eraKey)
+#process.jecAppliedJetProducer.Jets.Era = cms.string(eraKey)
+#process.JvmAppliedEventFilter.Jets.Era = cms.string(eraKey)
 
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
@@ -224,7 +268,8 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
 process.p = cms.Path(
     process.hltFilter *
     process.metFilters *
-    process.ecalBadCalibReducedMINIAODFilter*
+    #process.ecalBadCalibReducedMINIAODFilter*
+    #process.ecalBadCalibFilter *
     process.TrackEcalDeadChannelFilter *
     process.JvmAppliedEventFilter *
     process.jecAppliedJetProducer *
