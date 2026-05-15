@@ -25,9 +25,10 @@ echo "Files for this job:"
 echo "$FILES"
 
 # Run your analysis
-python3 muonBackgroundEstimateFromNtuples.py \
+python3 MuonBackground_v2_table16_pveto_json_pairfix_taujet.py \
   --single-muon $FILES \
-  --met $FILES \
-  --output Muon_2023D_Pveto_all_layers_$1.root
+  --layers all \
+  --output Muon_2023D_Pveto_NewCode_$1.root \
+  --json-output Muon_2023D_Pveto_NewCode_$1.json
 
 echo "Done job $1"

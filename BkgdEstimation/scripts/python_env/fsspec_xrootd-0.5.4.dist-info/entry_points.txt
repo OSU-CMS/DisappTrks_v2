@@ -1,0 +1,2 @@
+[fsspec.specs]
+root = fsspec_xrootd:XRootDFileSystem
