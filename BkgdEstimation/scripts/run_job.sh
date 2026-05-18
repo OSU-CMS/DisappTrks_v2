@@ -1,34 +1,34 @@
 #!/bin/bash
 set -e
 
-echo "Starting job $1"
+JOBID=$1
+DATASET=$2
 
-echo "Setting up environment"
+echo "Starting job ${JOBID} for ${DATASET}"
+
 export PYTHONPATH=$PWD/python_env:$PYTHONPATH
+python3 -c "import awkward, uproot, numpy, vector, fsspec_xrootd; print('imports OK')"
 
-echo "Python path:"
-python3 -c "import awkward, uproot, numpy, fsspec_xrootd; print('imports OK')"
+FILES_PER_JOB=5
 
-echo "Past python path part"
+FILELIST="filelists/filelist_${DATASET}_Muons.txt"
 
-FILES_PER_JOB=5   # ← adjust this
-
-START=$(( $1 * FILES_PER_JOB ))
+START=$(( JOBID * FILES_PER_JOB ))
 END=$(( START + FILES_PER_JOB ))
 
-echo "Reading files $START to $END"
+OUTDIR="analysis_output/${DATASET}"
+mkdir -p "$OUTDIR"
 
-# Extract this job's files
-FILES=$(sed -n "$((START+1)),$((END))p" filelist_2023D_Muons.txt)
+FILES=$(sed -n "$((START+1)),$((END))p" "$FILELIST")
 
-echo "Files for this job:"
+echo "Using filelist: $FILELIST"
+echo "Files:"
 echo "$FILES"
 
-# Run your analysis
 python3 MuonBackground_v2_table16_pveto_json_pairfix_taujet.py \
   --single-muon $FILES \
   --layers all \
-  --output Muon_2023D_Pveto_NewCode_$1.root \
-  --json-output Muon_2023D_Pveto_NewCode_$1.json
+  --output "${OUTDIR}/Muon_${DATASET}_Pveto_${JOBID}.root" \
+  --json-output "${OUTDIR}/Muon_${DATASET}_Pveto_${JOBID}.json"
 
-echo "Done job $1"
+echo "Done job ${JOBID} for ${DATASET}"

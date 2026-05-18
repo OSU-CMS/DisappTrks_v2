@@ -329,7 +329,9 @@ def count_pveto_pairs(arrays, layer):
     trk_obj, mu_obj = ak.unzip(ak.cartesian([tracks, muons], nested=True))
 
     mass = (trk_obj + mu_obj).mass
-    z_window = (mass > Z_MASS - 10) & (mass < Z_MASS + 10)
+    #z_window = (mass > Z_MASS - 10) & (mass < Z_MASS + 10)
+    mass_gt_10 = mass > 10.0
+    z_window = mass_gt_10 & (mass > Z_MASS - 10) & (mass < Z_MASS + 10)
 
     os_pair = trk_obj.charge * mu_obj.charge < 0
     ss_pair = trk_obj.charge * mu_obj.charge > 0
@@ -341,6 +343,28 @@ def count_pveto_pairs(arrays, layer):
     passes_muon_veto = trk_obj.passesMuonVeto
     passes_missing_outer = trk_obj.missingOuterHits >= 3
     passes_veto = passes_muon_veto & passes_missing_outer
+
+ # ============================================
+    # DEBUG
+    # ============================================
+
+    debug_ss_fail_veto = ak.sum(
+        z_window & ss_pair & ~passes_veto
+    )
+
+    debug_ss_fail_muon_veto = ak.sum(
+        z_window & ss_pair & ~passes_muon_veto
+    )
+
+    debug_ss_fail_outer = ak.sum(
+        z_window & ss_pair & ~passes_missing_outer
+    )
+
+    print(layer, "SS fail veto:", debug_ss_fail_veto)
+    print(layer, "SS fail muon veto:", debug_ss_fail_muon_veto)
+    print(layer, "SS fail missingOuter:", debug_ss_fail_outer)
+
+    # ============================================
 
     return {
         "p_veto_den_os": float(ak.sum(z_window & os_pair)),
