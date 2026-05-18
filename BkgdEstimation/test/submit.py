@@ -171,6 +171,7 @@ config.JobType.psetName    = '{CFG_PATH}'
 config.JobType.pyCfgParams = [
     'year={full_year}',
     'trigger={trigger}',
+    'era={era}' #for 2022 data, we need to pass the era letter
 ]
 config.JobType.inputFiles = [
     '../../data/JecConfigAK4.json',
@@ -219,6 +220,18 @@ def main():
                         dest="dataset_types",
                         help="Only submit for these types (Muon EGamma JetMET)")
     args = parser.parse_args()
+
+    # Env vars are read at import time; they are NOT set for your shell. If you
+    # run `crab checkwrite` by hand, export them first or paste literals below.
+    print(
+        f"CRAB stageout (from this script): storageSite={CRAB_STORAGE_SITE}\n"
+        f"  outLFNDirBase={CRAB_OUTPUT_BASE}\n"
+        f"Shell checkwrite (copy-paste after adjusting if needed):\n"
+        f"  export DISAPP_CRAB_STORAGE_SITE={CRAB_STORAGE_SITE}\n"
+        f"  export DISAPP_CRAB_OUTPUT_LFN={CRAB_OUTPUT_BASE}\n"
+        f"  crab checkwrite --site=\"$DISAPP_CRAB_STORAGE_SITE\" --lfn=\"$DISAPP_CRAB_OUTPUT_LFN\"\n",
+        flush=True,
+    )
 
     entries = parse_datasets(args.toml)
 
