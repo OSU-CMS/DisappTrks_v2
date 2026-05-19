@@ -1,0 +1,186 @@
+{
+  "NLayers4": {
+    "cutflow": {
+      "= 1 track-muon pairs qtrack * qmuon < 0": 102,
+      "= 1 track-muon pairs |Mtrack,muon - MZ| < 10 GeV": 150,
+      ">= 1 muons MT(pTmiss, muon) < 40 GeV": 57765710,
+      ">= 1 muons pT > 26 GeV": 106112076,
+      ">= 1 muons passing tight muon ID": 90559043,
+      ">= 1 muons |eta| < 2.1": 95384460,
+      ">= 1 track nlayers >= 4 (NLayers4)": 102,
+      ">= 1 track-muon pairs Mtrack,muon > 10 GeV": 2072881,
+      ">= 1 tracks Ecalo < 10 GeV": 1886373,
+      ">= 1 tracks min DeltaRtrack,electron > 0.15": 2056846,
+      ">= 1 tracks missing inner hits = 0": 23970664,
+      ">= 1 tracks missing middle hits = 0": 21986037,
+      ">= 1 tracks number of pixel hits >= 4": 24100448,
+      ">= 1 tracks pT > 30 GeV": 47764681,
+      ">= 1 tracks rel. PF-based iso. < 0.05": 19641570,
+      ">= 1 tracks |dxy| < 0.02 cm": 19350692,
+      ">= 1 tracks |dz| < 0.5 cm": 19338381,
+      ">= 1 tracks |eta| < 0.15 OR |eta| > 0.35": 43226884,
+      ">= 1 tracks |eta| < 1.42 OR |eta| > 1.65": 38711383,
+      ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85": 35323350,
+      ">= 1 tracks |eta| < 2.1": 46694952,
+      "event passes SingleMuon triggers": 119708673,
+      "exactly one passing muon chosen randomly": 57765710,
+      "exactly one passing track chosen randomly": 1886373
+    },
+    "counts": {
+      "p_veto_den_os": {
+        "value": 102.0,
+        "variance": 102.0
+      },
+      "p_veto_den_ss": {
+        "value": 48.0,
+        "variance": 48.0
+      },
+      "p_veto_num_os": {
+        "value": 43.0,
+        "variance": 43.0
+      },
+      "p_veto_num_ss": {
+        "value": 48.0,
+        "variance": 48.0
+      }
+    }
+  },
+  "NLayers5": {
+    "cutflow": {
+      "= 1 track-muon pairs qtrack * qmuon < 0": 54,
+      "= 1 track-muon pairs |Mtrack,muon - MZ| < 10 GeV": 61,
+      ">= 1 muons MT(pTmiss, muon) < 40 GeV": 57765710,
+      ">= 1 muons pT > 26 GeV": 106112076,
+      ">= 1 muons passing tight muon ID": 90559043,
+      ">= 1 muons |eta| < 2.1": 95384460,
+      ">= 1 track nlayers >= 4 (NLayers5)": 54,
+      ">= 1 track-muon pairs Mtrack,muon > 10 GeV": 2072881,
+      ">= 1 tracks Ecalo < 10 GeV": 1886373,
+      ">= 1 tracks min DeltaRtrack,electron > 0.15": 2056846,
+      ">= 1 tracks missing inner hits = 0": 23970664,
+      ">= 1 tracks missing middle hits = 0": 21986037,
+      ">= 1 tracks number of pixel hits >= 4": 24100448,
+      ">= 1 tracks pT > 30 GeV": 47764681,
+      ">= 1 tracks rel. PF-based iso. < 0.05": 19641570,
+      ">= 1 tracks |dxy| < 0.02 cm": 19350692,
+      ">= 1 tracks |dz| < 0.5 cm": 19338381,
+      ">= 1 tracks |eta| < 0.15 OR |eta| > 0.35": 43226884,
+      ">= 1 tracks |eta| < 1.42 OR |eta| > 1.65": 38711383,
+      ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85": 35323350,
+      ">= 1 tracks |eta| < 2.1": 46694952,
+      "event passes SingleMuon triggers": 119708673,
+      "exactly one passing muon chosen randomly": 57765710,
+      "exactly one passing track chosen randomly": 1886373
+    },
+    "counts": {
+      "p_veto_den_os": {
+        "value": 54.0,
+        "variance": 54.0
+      },
+      "p_veto_den_ss": {
+        "value": 7.0,
+        "variance": 7.0
+      },
+      "p_veto_num_os": {
+        "value": 9.0,
+        "variance": 9.0
+      },
+      "p_veto_num_ss": {
+        "value": 7.0,
+        "variance": 7.0
+      }
+    }
+  },
+  "NLayers6plus": {
+    "cutflow": {
+      "= 1 track-muon pairs qtrack * qmuon < 0": 1633430,
+      "= 1 track-muon pairs |Mtrack,muon - MZ| < 10 GeV": 1633485,
+      ">= 1 muons MT(pTmiss, muon) < 40 GeV": 57765710,
+      ">= 1 muons pT > 26 GeV": 106112076,
+      ">= 1 muons passing tight muon ID": 90559043,
+      ">= 1 muons |eta| < 2.1": 95384460,
+      ">= 1 track nlayers >= 4 (NLayers6plus)": 1633430,
+      ">= 1 track-muon pairs Mtrack,muon > 10 GeV": 2072881,
+      ">= 1 tracks Ecalo < 10 GeV": 1886373,
+      ">= 1 tracks min DeltaRtrack,electron > 0.15": 2056846,
+      ">= 1 tracks missing inner hits = 0": 23970664,
+      ">= 1 tracks missing middle hits = 0": 21986037,
+      ">= 1 tracks number of pixel hits >= 4": 24100448,
+      ">= 1 tracks pT > 30 GeV": 47764681,
+      ">= 1 tracks rel. PF-based iso. < 0.05": 19641570,
+      ">= 1 tracks |dxy| < 0.02 cm": 19350692,
+      ">= 1 tracks |dz| < 0.5 cm": 19338381,
+      ">= 1 tracks |eta| < 0.15 OR |eta| > 0.35": 43226884,
+      ">= 1 tracks |eta| < 1.42 OR |eta| > 1.65": 38711383,
+      ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85": 35323350,
+      ">= 1 tracks |eta| < 2.1": 46694952,
+      "event passes SingleMuon triggers": 119708673,
+      "exactly one passing muon chosen randomly": 57765710,
+      "exactly one passing track chosen randomly": 1886373
+    },
+    "counts": {
+      "p_veto_den_os": {
+        "value": 1794947.0,
+        "variance": 1794947.0
+      },
+      "p_veto_den_ss": {
+        "value": 66.0,
+        "variance": 66.0
+      },
+      "p_veto_num_os": {
+        "value": 4.0,
+        "variance": 4.0
+      },
+      "p_veto_num_ss": {
+        "value": 0.0,
+        "variance": 0.0
+      }
+    }
+  },
+  "combinedBins": {
+    "cutflow": {
+      "= 1 track-muon pairs qtrack * qmuon < 0": 1633581,
+      "= 1 track-muon pairs |Mtrack,muon - MZ| < 10 GeV": 1633690,
+      ">= 1 muons MT(pTmiss, muon) < 40 GeV": 57765710,
+      ">= 1 muons pT > 26 GeV": 106112076,
+      ">= 1 muons passing tight muon ID": 90559043,
+      ">= 1 muons |eta| < 2.1": 95384460,
+      ">= 1 track nlayers >= 4 (combinedBins)": 1633581,
+      ">= 1 track-muon pairs Mtrack,muon > 10 GeV": 2072881,
+      ">= 1 tracks Ecalo < 10 GeV": 1886373,
+      ">= 1 tracks min DeltaRtrack,electron > 0.15": 2056846,
+      ">= 1 tracks missing inner hits = 0": 23970664,
+      ">= 1 tracks missing middle hits = 0": 21986037,
+      ">= 1 tracks number of pixel hits >= 4": 24100448,
+      ">= 1 tracks pT > 30 GeV": 47764681,
+      ">= 1 tracks rel. PF-based iso. < 0.05": 19641570,
+      ">= 1 tracks |dxy| < 0.02 cm": 19350692,
+      ">= 1 tracks |dz| < 0.5 cm": 19338381,
+      ">= 1 tracks |eta| < 0.15 OR |eta| > 0.35": 43226884,
+      ">= 1 tracks |eta| < 1.42 OR |eta| > 1.65": 38711383,
+      ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85": 35323350,
+      ">= 1 tracks |eta| < 2.1": 46694952,
+      "event passes SingleMuon triggers": 119708673,
+      "exactly one passing muon chosen randomly": 57765710,
+      "exactly one passing track chosen randomly": 1886373
+    },
+    "counts": {
+      "p_veto_den_os": {
+        "value": 1795103.0,
+        "variance": 1795103.0
+      },
+      "p_veto_den_ss": {
+        "value": 121.0,
+        "variance": 121.0
+      },
+      "p_veto_num_os": {
+        "value": 56.0,
+        "variance": 56.0
+      },
+      "p_veto_num_ss": {
+        "value": 55.0,
+        "variance": 55.0
+      }
+    }
+  }
+}

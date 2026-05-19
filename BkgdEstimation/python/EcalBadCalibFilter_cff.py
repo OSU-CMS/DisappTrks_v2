@@ -24,30 +24,67 @@ def _normalize_year(year_or_era):
     return digits[:4]
 
 
-def makeEcalBadCalibFilter(year_or_era, tagging_mode = False):
-    year = _normalize_year(year_or_era)
 
-    if year in ("2016", "2017", "2018"):
+def makeEcalBadCalibFilter(year, tagging_mode=False):
+
+    year = str(year)
+
+    # -------------------------
+    # Run 2 (legacy)
+    # -------------------------
+    if _is_run2(year):
         return cms.EDFilter(
             "EcalBadCalibFilter",
-            EcalRecHitSource = cms.InputTag("reducedEgamma", "reducedEERecHits"),
-            ecalMinEt = cms.double(50.0),
-            baddetEcal = cms.vuint32(*_RUN2_BAD_DET_ECAL),
-            taggingMode = cms.bool(tagging_mode),
-            debug = cms.bool(False),
+            EcalRecHitSource=cms.InputTag("reducedEgamma", "reducedEERecHits"),
+            ecalMinEt=cms.double(50.0),
+            baddetEcal=cms.vuint32(*_RUN2_BAD_DET_ECAL),
+            taggingMode=cms.bool(tagging_mode),
+            debug=cms.bool(False),
         )
 
-    if year in ("2022", "2023"):
+    # -------------------------
+    # Run 3 (2022–2025 unified CMS behavior)
+    # -------------------------
+    if year.startswith(("2022", "2023", "2024", "2025")):
         return cms.EDFilter(
             "EcalBadCalibFilter",
-            EcalRecHitSource = cms.InputTag("reducedEgamma", "reducedEBRecHits"),
-            ecalMinEt = cms.double(50.0),
-            baddetEcal = cms.vuint32(*_RUN3_2022_2023_BAD_DET_ECAL),
-            taggingMode = cms.bool(tagging_mode),
-            debug = cms.bool(False),
+            EcalRecHitSource=cms.InputTag("reducedEgamma", "reducedEBRecHits"),
+            ecalMinEt=cms.double(50.0),
+
+            # IMPORTANT:
+            # CMS Run 3: this is effectively controlled by GT conditions
+            baddetEcal=cms.vuint32(),   # empty on purpose
+
+            taggingMode=cms.bool(tagging_mode),
+            debug=cms.bool(False),
         )
 
-    return None
+    # fallback (safe failure instead of silent None bugs)
+    raise RuntimeError(f"Unsupported year for ECAL filter: {year}")
+#def makeEcalBadCalibFilter(year_or_era, tagging_mode = False):
+#    year = _normalize_year(year_or_era)
+
+#    if year in ("2016", "2017", "2018"):
+#        return cms.EDFilter(
+#            "EcalBadCalibFilter",
+#            EcalRecHitSource = cms.InputTag("reducedEgamma", "reducedEERecHits"),
+#            ecalMinEt = cms.double(50.0),
+#            baddetEcal = cms.vuint32(*_RUN2_BAD_DET_ECAL),
+#            taggingMode = cms.bool(tagging_mode),
+#            debug = cms.bool(False),
+ #       )
+
+#    if year in ("2022", "2023"):
+#        return cms.EDFilter(
+#            "EcalBadCalibFilter",
+#            EcalRecHitSource = cms.InputTag("reducedEgamma", "reducedEBRecHits"),
+#            ecalMinEt = cms.double(50.0),
+#            baddetEcal = cms.vuint32(*_RUN3_2022_2023_BAD_DET_ECAL),
+#            taggingMode = cms.bool(tagging_mode),
+#            debug = cms.bool(False),
+ #       )
+
+#    return None
 
 
 def addEcalBadCalibFilter(process,
