@@ -723,7 +723,14 @@ static bool tauPassesId(const pat::Tau &tau, const std::string &vsJet,
       return false;
     return tau.tauID(label) > 0.5f;
   };
-  return check(vsJet) && check(vsEle) && check(vsMu);
+  return (
+    check("decayModeFindingNewDMs")
+    && tau.decayMode() != 5
+    && tau.decayMode() != 6
+    && check(vsJet) 
+    && check(vsEle) 
+    && check(vsMu)
+  );
 }
 
 // ── Hit-drop helper
