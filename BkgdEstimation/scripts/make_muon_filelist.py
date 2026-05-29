@@ -7,7 +7,24 @@ from pathlib import Path
 XRD = "root://cmseosmgm01.fnal.gov:1094"
 XRDFS = "root://cmseosmgm01.fnal.gov"
 
+# Paths may be relative to BASE (group EOS) or absolute (user EOS).
 DATASETS = {
+    "2022_C": [
+        "/store/user/hazheng/DisappTrksV2/Muon/2022_C_Muon",
+    ],
+    "2022_D": [
+        "/store/user/hazheng/DisappTrksV2/Muon/2022_D_Muon",
+    ],
+    "2022_E": [
+        "/store/user/hazheng/DisappTrksV2/Muon/2022_E_Muon",
+    ],
+    "2022_F_v1_Muon0": [
+        "/store/user/hazheng/DisappTrksV2/Muon/2022_F_v1_Muon0",
+    ],
+    "2022_G": [
+        "/store/user/hazheng/DisappTrksV2/Muon/2022_G_Muon",
+    ],
+
     "2023_C": [
         "Muon0/2023_C_v1_Muon0_v2",
         "Muon0/2023_C_v2_Muon0_v2",
@@ -81,7 +98,8 @@ def list_root_files(eos_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--year", choices=["2023_C", "2023_D", "2024", "2025", "all"], default="all")
+    years = sorted(DATASETS.keys())
+    parser.add_argument("--year", choices=years + ["all"], default="all")
     parser.add_argument("--outdir", default="filelists")
     args = parser.parse_args()
 
@@ -94,7 +112,7 @@ def main():
         all_files = []
 
         for ds in datasets:
-            eos_dir = f"{BASE}/{ds}"
+            eos_dir = ds if ds.startswith("/") else f"{BASE}/{ds}"
             print(f"Listing {eos_dir}")
             files = list_root_files(eos_dir)
             print(f"  found {len(files)} root files")
