@@ -200,7 +200,7 @@ process.hltFilter = cms.EDFilter(
 
 process.metFilters = cms.EDFilter("HLTHighLevel",
     # TriggerResultsTag  = cms.InputTag("TriggerResults", "", "RECO"), # Should be RECO for 2025 and PAT for 2024  # newer data
-    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "PAT"),  # 2022 22Sep2023 re-reco MINIAOD uses PAT
+    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "PAT"),  # 2022 CDE re-reco MINIAOD uses PAT. 2022 F/G uses RECO.
     eventSetupPathsKey = cms.string(""),
     andOr              = cms.bool(False),   # AND — must pass all filters
     throw              = cms.bool(False),
@@ -268,6 +268,9 @@ process.jecAppliedJetProducer.Jets.Year = cms.string(jec_year_key)
 process.jecAppliedJetProducer.Jets.Era  = cms.string(jec_era_key)
 process.JvmAppliedEventFilter.Jets.Year = cms.string(jvm_year_key)
 
+#please change the muonTriggerFilterName based on the era you are running over.
+#muonTriggerFilterName = hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered0p08 #2022 era C-D
+#muonTriggerFilterName = hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered #2022 era E-G
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     tracks       = cms.InputTag("isolatedTracks"),
     met          = cms.InputTag("jecAppliedMetProducer", "CorrectedMet"),
@@ -279,7 +282,7 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     treeName     = cms.string("Events"),
     triggerResults       = cms.InputTag("TriggerResults", "", "HLT"),
     triggerObjects       = cms.InputTag("slimmedPatTrigger"),
-    muonTriggerFilterName     = cms.string("hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered"),
+    muonTriggerFilterName     = cms.string("hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered0p08"),
     electronTriggerFilterName = cms.string("hltEle32WPTightGsfTrackIsoFilter"),
     triggerMatchingDR    = cms.double(0.3),
     hitInefficiency      = cms.double(0.0),
