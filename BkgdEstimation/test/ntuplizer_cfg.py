@@ -174,11 +174,11 @@ mc_global_tag   = '130X_mcRun3_2022_realistic_postEE_v6'   # change to ...realis
 
 if options.year == "2022":
     era_ch = options.era.strip().upper()[:1]
-    if era_ch in ("C", "D"):
-        data_global_tag = "130X_dataRun3_v2"
+    if era_ch in ("C", "D", "E"):
+        data_global_tag = "124X_dataRun3_v15"
         #mc_global_tag = "130X_mcRun3_2022_realistic_v5"
-    elif era_ch in ("E", "F", "G"):
-        data_global_tag = "130X_dataRun3_PromptAnalysis_v1"
+    elif era_ch in ("F", "G"):
+        data_global_tag = "124X_dataRun3_PromptAnalysis_v2"
         #mc_global_tag = "130X_mcRun3_2022_realistic_postEE_v6"
     else:
         raise RuntimeError(f"Invalid era={options.era!r} for year=2022")
