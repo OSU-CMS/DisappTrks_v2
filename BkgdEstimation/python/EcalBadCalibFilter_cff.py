@@ -1,5 +1,8 @@
 import FWCore.ParameterSet.Config as cms
 
+def _is_run2(year):
+    year = _normalize_year(year)
+    return year in ("2016", "2017", "2018")
 
 _RUN2_BAD_DET_ECAL = [
     872439604, 872422825, 872420274, 872423218,
