@@ -42,7 +42,7 @@ CMSSW_DATA_DIR = "../../data"
 
 # ── CRAB settings ─────────────────────────────────────────────────────────────
 CRAB_STORAGE_SITE = "T3_US_FNALLPC"
-CRAB_OUTPUT_BASE  = "/store/group/lpclonglived/DisappTrks/"
+CRAB_OUTPUT_BASE  = "/store/user/hazheng/DisappTrksV2/"
 CFG_PATH          = "ntuplizer_cfg.py"
 LUMI_MASK_BASE    = "https://cms-service-dqmdc.web.cern.ch/CAF/certification"
 
@@ -147,8 +147,6 @@ def submit_one(entry):
     lumi_mask    = LUMI_MASKS[base_year(year)]
     request_name = key.replace(".", "_")[-100:]
 
-    full_year = f"{year}{era}"
-
     input_files = [
         #ele_abs,
         #mu_abs,
@@ -169,9 +167,9 @@ config.General.transferLogs    = True
 config.JobType.pluginName  = 'Analysis'
 config.JobType.psetName    = '{CFG_PATH}'
 config.JobType.pyCfgParams = [
-    'year={full_year}',
+    'year={year}',
     'trigger={trigger}',
-    'era={era}' #for 2022 data, we need to pass the era letter
+    'era={era}',
 ]
 config.JobType.inputFiles = [
     '../../data/JecConfigAK4.json',
