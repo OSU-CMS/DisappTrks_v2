@@ -69,8 +69,8 @@ def resolve_jec_tag(year, era=""):
         if era not in ("C", "D", "E", "F", "G"):
             raise RuntimeError(f"Invalid era={options.era!r} for year=2022")
         if era in ("C", "D"):
-            return "2022Pre", f"Era2022{era}", "2022Pre"
-        return "2022Post", f"Era2022{era}", "2022Post"
+            return "2022Pre", f"Era2022PreAll", "2022Pre"
+        return "2022Post", f"Era2022PostAll", "2022Post"
 
     if year in ("2023C", "2023Pre"):
         return "2023Pre", "Era2023PreAll", "2023Pre"
