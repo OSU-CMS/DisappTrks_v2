@@ -112,3 +112,29 @@ def print_cutflow(object_cuts, event_cuts=None):
     print(f"{'=' * (col + 24)}\n")
 
     return final
+
+def compute_cutflow(object_cuts, event_cuts=None):
+    results = []
+
+    first_mask = next(iter(object_cuts[0]["cuts"].values()))
+    n_total = len(first_mask)
+
+    cumul_event_mask = ak.Array([True] * n_total)
+
+    # total
+    results.append(("Total events", n_total))
+
+    for group in object_cuts:
+        cumul_obj_mask = None
+        for name, mask in group["cuts"].items():
+            cumul_obj_mask = mask if cumul_obj_mask is None else cumul_obj_mask & mask
+            n = ak.sum(cumul_event_mask & ak.any(cumul_obj_mask, axis=1))
+            results.append((name, int(n)))
+        cumul_event_mask = cumul_event_mask & ak.any(cumul_obj_mask, axis=1)
+
+    if event_cuts:
+        for name, mask in event_cuts.items():
+            cumul_event_mask = cumul_event_mask & mask
+            results.append((name, int(ak.sum(cumul_event_mask))))
+
+    return results

@@ -60,27 +60,31 @@ def require(name, value):
 
 require("trigger", options.trigger)
 require("year", options.year)
+def resolve_jec_tag(year, era=""):
+    year = str(year).strip()
+    era = str(era).strip().upper()[:1]
 
-# JEC/JVM keys for 2022 (must match submit.py pyCfgParams era=… and JecConfigAK4.json).
-if options.year == "2022":
-    require("era", options.era)
-    era_ch = options.era.strip().upper()[:1]
-    if era_ch not in ("C", "D", "E", "F", "G"):
-        raise RuntimeError(
-            f"Invalid era={options.era!r} for year=2022 (expected one of C–G)."
-        )
-    jec_era_key = f"Era2022{era_ch}"
-    if era_ch in ("C", "D"):
-        jec_year_key = "2022Pre"
-        jvm_year_key = "2022Pre"
-    else:
-        jec_year_key = "2022Post"
-        jvm_year_key = "2022Post"
-else:
-    #FIXME: this is a hack to get the code to run. We need to change this to the correct year and era.
-    jec_year_key = "2022Pre"
-    jec_era_key = "Era2022C"
-    jvm_year_key = "2022Pre"
+    if year == "2022":
+        require("era", era)
+        if era not in ("C", "D", "E", "F", "G"):
+            raise RuntimeError(f"Invalid era={options.era!r} for year=2022")
+        if era in ("C", "D"):
+            return "2022Pre", f"Era2022PreAll", "2022Pre"
+        return "2022Post", f"Era2022PostAll", "2022Post"
+
+    if year in ("2023C", "2023Pre"):
+        return "2023Pre", "Era2023PreAll", "2023Pre"
+
+    if year in ("2023D", "2023Post"):
+        return "2023Post", "Era2023PostAll", "2023Post"
+
+    if year.startswith("2024"):
+        return "2024", "Era2024All", "2024"
+
+    if year.startswith("2025"):
+        return "2025", "Era2025All", "2025"
+
+    raise RuntimeError(f"Unsupported year/era for JEC mapping: year={year}, era={era}")
 
 # Define trigger sets
 triggerPaths = {
@@ -114,7 +118,18 @@ if options.trigger not in triggerPaths:
         f"Unknown trigger '{options.trigger}'. "
         f"Choose from: {list(triggerPaths.keys())}"
     )
+def _ecal_year(year_or_era):
+    value = str(year_or_era).strip()
 
+    # explicit Run 3 handling
+    if value.startswith("2022"):
+        return "2022"
+    if value.startswith("2023"):
+        return "2023"
+    if value.startswith("2024"):
+        return "2024"
+    if value.startswith("2025"):
+        return "2025"
 
 processName = "NTuplizer"
 process = cms.Process(processName)
@@ -138,7 +153,7 @@ process.CaloGeometryBuilder.SelectedCalos = [
 # Sets the global tag, needs to be set manually for now!
 # 2025: 150X_dataRun3_Prompt_v1
 # 2024: 150X_dataRun3_v2
-#
+# 2023: 130X_dataRun3_PromptAnalysis_v1
 # 2022 — values taken from AN-2024-155 v4, section 2.1 / 2.2.
 #   Analysis CMSSW: CMSSW_13_0_13. Inputs are the 22Sep2023 re-miniAOD.
 #   Lumi JSON: Cert_Collisions2022_355100_362760_Golden.json
@@ -155,22 +170,34 @@ process.CaloGeometryBuilder.SelectedCalos = [
 # data_global_tag = '150X_dataRun3_Prompt_v1'                 # 24newer data
 # mc_global_tag   = '150X_mcRun3_2024_realistic_v2'           # 24 newer data
 
-if options.year == "2022" and (options.era == "C" or options.era == "D"):
-    data_global_tag = '130X_dataRun3_v2' #use lowercase v2 for 2022 C/D data
-elif options.year == "2022" and (
-    options.era == "E" or options.era == "F" or options.era == "G"
-):
-    data_global_tag = '130X_dataRun3_PromptAnalysis_v1'
-else:
-    raise RuntimeError(f"Invalid year={options.year} and era={options.era} combination.")
-    quit()
-
-
 mc_global_tag   = '130X_mcRun3_2022_realistic_postEE_v6'   # change to ...realistic_v5 for 2022 C/D MC. since we MC = false, we can ingnore this line.
+
+if options.year == "2022":
+    era_ch = options.era.strip().upper()[:1]
+    if era_ch in ("C", "D", "E"):
+        data_global_tag = "124X_dataRun3_v15"
+        #mc_global_tag = "130X_mcRun3_2022_realistic_v5"
+    elif era_ch in ("F", "G"):
+        data_global_tag = "124X_dataRun3_PromptAnalysis_v2"
+        #mc_global_tag = "130X_mcRun3_2022_realistic_postEE_v6"
+    else:
+        raise RuntimeError(f"Invalid era={options.era!r} for year=2022")
+elif options.year.startswith("2023"):
+    data_global_tag = "130X_dataRun3_PromptAnalysis_v1"
+    #mc_global_tag = "150X_mcRun3_2024_realistic_v2"
+elif options.year.startswith("2024"):
+    data_global_tag = "150X_dataRun3_v2"
+    #mc_global_tag = "150X_mcRun3_2024_realistic_v2"
+elif options.year.startswith("2025"):
+    data_global_tag = "150X_dataRun3_Prompt_v1"
+    #mc_global_tag = "150X_mcRun3_2024_realistic_v2"
+else:
+    raise RuntimeError(f"Unsupported year={options.year!r}")
 MC = False
 process.GlobalTag = GlobalTag(
     process.GlobalTag, mc_global_tag if MC else data_global_tag, ""
 )
+#process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:run3_data_prompt', '')
 
 process.source = cms.Source(
     "PoolSource", fileNames=cms.untracked.vstring(options.inputFiles)
@@ -182,7 +209,7 @@ process.TFileService = cms.Service("TFileService", fileName=cms.string("ntuple.r
 
 # Handles the additional masking of ECAL channels that was stated in
 # this Twiki: https://twiki.cern.ch/twiki/bin/viewauth/CMS/MissingETOptionalFiltersRun2#Run_3_2024_data_and_MC_Recommend
-ecalBadCalibFilter = addEcalBadCalibFilter(process, options.year)
+#ecalBadCalibFilter = addEcalBadCalibFilter(process, _ecal_year(options.year))
 
 process.hltFilter = cms.EDFilter(
     "HLTHighLevel",
@@ -229,6 +256,19 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 # Allows you to set that year that should be used for the JEC and JVM values.
 # In 2024 and 2025, the key is of the format Era2024All and Era2025All.
 # In 2023 the format is Era2023PreAll and Era2023PostAll to signify 2023C and 2023D
+# In 2022 the keys for year and era are formatted differently so this will need to be changed
+# To see the format of the keys, check JecConfigAK4.json
+
+jec_year_key, jec_era_key, jvm_year_key = resolve_jec_tag(options.year, options.era)
+
+process.jecAppliedMetProducer.Jets.Year = cms.string(jec_year_key)
+process.jecAppliedMetProducer.Jets.Era  = cms.string(jec_era_key)
+
+process.jecAppliedJetProducer.Jets.Year = cms.string(jec_year_key)
+process.jecAppliedJetProducer.Jets.Era  = cms.string(jec_era_key)
+
+process.JvmAppliedEventFilter.Jets.Year = cms.string(jvm_year_key)
+
 # In 2022 the keys are split into 2022Pre (Run C/D) and 2022Post (Run E/F/G),
 #   with per-run era keys Era2022C/D/E/F/G (no *All key exists for 2022).
 #
@@ -251,16 +291,6 @@ process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 #
 # jec_year_key / jec_era_key / jvm_year_key for year==2022 are set above from options.era.
 
-# process.jecAppliedMetProducer.Jets.Year = cms.string(options.year)                              # newer data
-# process.jecAppliedMetProducer.Jets.Era  = cms.string("Era" + options.year + "All")              # newer data
-# process.jecAppliedJetProducer.Jets.Year = cms.string(options.year)                              # newer data
-# process.jecAppliedJetProducer.Jets.Era  = cms.string("Era" + options.year + "All")              # newer data
-# process.JvmAppliedEventFilter.Jets.Year = cms.string(options.year)                              # newer data
-process.jecAppliedMetProducer.Jets.Year = cms.string(jec_year_key)
-process.jecAppliedMetProducer.Jets.Era  = cms.string(jec_era_key)
-process.jecAppliedJetProducer.Jets.Year = cms.string(jec_year_key)
-process.jecAppliedJetProducer.Jets.Era  = cms.string(jec_era_key)
-process.JvmAppliedEventFilter.Jets.Year = cms.string(jvm_year_key)
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     tracks       = cms.InputTag("isolatedTracks"),
@@ -273,14 +303,14 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     treeName     = cms.string("Events"),
     triggerResults       = cms.InputTag("TriggerResults", "", "HLT"),
     triggerObjects       = cms.InputTag("slimmedPatTrigger"),
-    muonTriggerFilterName     = cms.string("hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered"),
+    muonTriggerFilterName     = cms.string("hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered"),  #use hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered0p08 for 2022 era CD Single muon
     electronTriggerFilterName = cms.string("hltEle32WPTightGsfTrackIsoFilter"),
     triggerMatchingDR    = cms.double(0.3),
     hitInefficiency      = cms.double(0.0),
     electronIdLabel      = cms.string("cutBasedElectronID-RunIIIWinter22-V1-tight"),
     tauVsJetLabel        = cms.string(""),
-    tauVsEleLabel        = cms.string("byTightDeepTau2018v2p5VSe"),
-    tauVsMuLabel         = cms.string("byTightDeepTau2018v2p5VSmu"),
+    tauVsEleLabel        = cms.string("byVVVLooseDeepTau2018v2p5VSe"),
+    tauVsMuLabel         = cms.string("byVLooseDeepTau2018v2p5VSmu"),
     rhoAll               = cms.InputTag("fixedGridRhoFastjetAll"),
     rhoAllCalo           = cms.InputTag("fixedGridRhoFastjetAllCalo"),
     rhoCentralCalo       = cms.InputTag("fixedGridRhoFastjetCentralCalo"),
@@ -290,7 +320,8 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
 process.p = cms.Path(
     process.hltFilter *
     process.metFilters *
-    process.ecalBadCalibReducedMINIAODFilter*
+    #process.ecalBadCalibReducedMINIAODFilter*
+    #process.ecalBadCalibFilter *
     process.TrackEcalDeadChannelFilter *
     process.JvmAppliedEventFilter *
     process.jecAppliedJetProducer *
