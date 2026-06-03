@@ -283,6 +283,8 @@ def make_tp_cutflow(arrays, layer):
     add(">= 1 tracks |dz| < 0.5 cm OR |lambda| > 1e-3", ak.any(trk, axis=1))
 
 
+    trk = trk & ((arrays["trk_eta"] < 0.0) | (arrays["trk_eta"] > 1.42) | (arrays["trk_phi"] < 2.7))
+    add(">= 1 tracks eta < 0 OR eta > 1.42 OR phi < 2.7", ak.any(trk, axis=1))
 
 
 
