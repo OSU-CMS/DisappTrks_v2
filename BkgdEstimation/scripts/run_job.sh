@@ -7,7 +7,7 @@ DATASET=$2
 echo "Starting job ${JOBID} for ${DATASET}"
 
 export PYTHONPATH=$PWD/python_env:$PYTHONPATH
-python3 -c "import awkward, uproot, numpy, vector, fsspec_xrootd; print('imports OK')"
+python3 -c "import awkward, uproot, numpy, vector, fsspec_xrootd; from XRootD import client; print('imports OK')"
 
 FILES_PER_JOB=5
 
