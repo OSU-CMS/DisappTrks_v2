@@ -159,7 +159,7 @@ def submit_one(entry):
 from CRABClient.UserUtilities import config
 config = config()
 
-config.General.requestName     = '{request_name}'
+config.General.requestName     = '{request_name}_v2'
 config.General.workArea        = 'crab_projects/{year}/{era}'
 config.General.transferOutputs = True
 config.General.transferLogs    = True
@@ -181,11 +181,11 @@ config.JobType.maxMemoryMB = 2500
 config.Data.inputDataset     = '{dataset}'
 config.Data.inputDBS         = 'global'
 config.Data.splitting        = 'LumiBased'
-config.Data.unitsPerJob      = 50
+config.Data.unitsPerJob      = 40
 config.Data.lumiMask         = '{lumi_mask}'
 config.Data.outLFNDirBase    = '{CRAB_OUTPUT_BASE}'
 config.Data.publication      = False
-config.Data.outputDatasetTag = '{request_name}'
+config.Data.outputDatasetTag = '{request_name}_v2'
 
 config.Site.storageSite = '{CRAB_STORAGE_SITE}'
 config.Site.blacklist   = ['T2_FR_IPHC', 'T2_FR_GRIF']
