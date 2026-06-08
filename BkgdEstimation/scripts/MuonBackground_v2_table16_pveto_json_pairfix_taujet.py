@@ -49,6 +49,9 @@ def parse_inputs(items: Iterable[str]) -> list[str]:
 def delta_phi(phi1, phi2):
     return np.arctan2(np.sin(phi1 - phi2), np.cos(phi1 - phi2))
 
+def GetABSLambda(eta):
+    theta = 2.0 * np.arctan(np.exp(-eta))
+    return np.abs((np.pi /2.0) - theta)
 
 def trans_mass(arrays, prefix):
     dphi = delta_phi(arrays[f"{prefix}_phi"], arrays["metNoMu_phi"])
@@ -214,7 +217,7 @@ def build_track_vectors(arrays, mask):
         "mass": ak.ones_like(arrays["trk_pt"][mask]) * MUON_MASS,
         "charge": arrays["trk_charge"][mask],
         "missingOuterHits": arrays["trk_missingOuterHits"][mask],
-        "passesMuonVeto": muon_veto[mask],
+        "passesMuonVeto": muon_veto[mask],   
     }, with_name="Momentum4D")
 
 
@@ -297,15 +300,20 @@ def make_tp_cutflow(arrays, layer):
     trk = trk & (np.abs(arrays["trk_dxy"]) < 0.02)
     add(">= 1 tracks |dxy| < 0.02 cm", ak.any(trk, axis=1))
 
-    trk = trk & (np.abs(arrays["trk_dz"]) < 0.5)
-    add(">= 1 tracks |dz| < 0.5 cm", ak.any(trk, axis=1))
-    #good_jet = (
-    #    (arrays["jet_pt"] > 120)
-    #    & (np.abs(arrays["jet_eta"]) < 2.4)
-    #    & arrays["jet_isTightLepVeto"]
-    #)
-    trk = trk & min_delta_r_mask(arrays, "jet", 0.5, obj_mask=good_jet)
-    add(">= 1 track-jet pairs DeltaRtrack,jet > 0.5", ak.any(trk, axis=1))
+    abs_lambda = GetABSLambda(arrays["trk_eta"])
+
+
+    trk = trk &  (  (np.abs(arrays["trk_dz"]) < 0.5) | (abs_lambda > 1e-3)  ) 
+    add(">= 1 tracks |dz| < 0.5 cm OR |lambda| > 1e-3", ak.any(trk, axis=1))
+
+
+    trk = trk & ((arrays["trk_eta"] < 0.0) | (arrays["trk_eta"] > 1.42) | (arrays["trk_phi"] < 2.7))
+    add(">= 1 tracks eta < 0 OR eta > 1.42 OR phi < 2.7", ak.any(trk, axis=1))
+
+
+
+    #trk = trk & min_delta_r_mask(arrays, "jet", 0.5)
+    #add(">= 1 track-jet pairs DeltaRtrack,jet > 0.5", ak.any(trk, axis=1))
 
     # Build pre-veto tag-probe pairs for the Table 16 M(track,muon) row.
     muons = build_muon_vectors(arrays, mu)
