@@ -160,8 +160,14 @@ process.CaloGeometryBuilder.SelectedCalos = [
 # data_global_tag = '150X_dataRun3_Prompt_v1'                 # 24newer data
 # mc_global_tag   = '150X_mcRun3_2024_realistic_v2'           # 24 newer data
 
+muonTriggerFilterNameTag = "hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered" #default trigger filter name for 2022 C/D/E data and remaining muon data.
+
 if options.year == "2022" and (options.era == "C" or options.era == "D" or options.era == "E"):
     data_global_tag = '124X_dataRun3_v15' #use lowercase v2 for 2022 C/D data
+
+    if options.era == "C" or options.era == "D":
+        muonTriggerFilterNameTag = "hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered0p08"
+        
 elif options.year == "2022" and (
       options.era == "F" or options.era == "G"
 ):
@@ -282,7 +288,7 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     treeName     = cms.string("Events"),
     triggerResults       = cms.InputTag("TriggerResults", "", "HLT"),
     triggerObjects       = cms.InputTag("slimmedPatTrigger"),
-    muonTriggerFilterName     = cms.string("hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered0p08"),
+    muonTriggerFilterName     = cms.string(muonTriggerFilterNameTag),
     electronTriggerFilterName = cms.string("hltEle32WPTightGsfTrackIsoFilter"),
     triggerMatchingDR    = cms.double(0.3),
     hitInefficiency      = cms.double(0.0),
