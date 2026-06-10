@@ -157,12 +157,12 @@ struct VertexBranches {
 };
 
 struct LepKin {
-    std::vector<float> pt, eta, phi;
-    std::vector<int> charge;
-    std::vector<bool> isTrigMatched;
-    std::vector<bool> isTight; // isTightMuon / cutBased tight ele / tau ID combo
-    std::vector<float> pfRelIso04_dBeta; // Δβ-corrected rel. PF iso (muons); -1 for others
-
+  std::vector<float> pt, eta, phi;
+  std::vector<int> charge;
+  std::vector<bool> isTrigMatched;
+  std::vector<bool> isTight; // isTightMuon / cutBased tight ele / tau ID combo
+  std::vector<float>
+      pfRelIso04_dBeta; // Δβ-corrected rel. PF iso (muons); -1 for others
 
   void book(TTree *t, const std::string &pfx) {
     t->Branch((pfx + "_pt").c_str(), &pt);
@@ -181,37 +181,6 @@ struct LepKin {
     isTrigMatched.clear();
     isTight.clear();
     pfRelIso04_dBeta.clear();
-  }
-};
-
-struct TauKin : public LepKin {
-  //std::vector<float> dz;
-  std::vector<int> decayMode;
-  std::vector<bool> decayModeFindingNewDMs;
-  std::vector<float> deepTau2018v2p5VSjet;
-  std::vector<float> deepTau2018v2p5VSe;
-  std::vector<float> deepTau2018v2p5VSmu;
-
-  void clear() {
-    LepKin::clear();
-
-    //dz.clear();
-    decayMode.clear();
-    decayModeFindingNewDMs.clear();
-    deepTau2018v2p5VSjet.clear();
-    deepTau2018v2p5VSe.clear();
-    deepTau2018v2p5VSmu.clear();
-  }
-
-  void book(TTree *t, const std::string &pfx) {
-    LepKin::book(t, pfx);
-
-//    t->Branch((pfx + "_dz").c_str(), &dz);
-    t->Branch((pfx + "_decayMode").c_str(), &decayMode);
-    t->Branch((pfx + "_decayModeFindingNewDMs").c_str(), &decayModeFindingNewDMs);
-    t->Branch((pfx + "_deepTau2018v2p5VSjet").c_str(), &deepTau2018v2p5VSjet);
-    t->Branch((pfx + "_deepTau2018v2p5VSe").c_str(), &deepTau2018v2p5VSe);
-    t->Branch((pfx + "_deepTau2018v2p5VSmu").c_str(), &deepTau2018v2p5VSmu);
   }
 };
 
@@ -745,14 +714,6 @@ struct JetBranches {
 
 // ── Tau ID helper
 // ─────────────────────────────────────────────────────────────
-static float tauIdValue(const pat::Tau &tau,
-                        const std::string &label) {
-  if (!tau.isTauIDAvailable(label))
-    return -1.0f;
-
-  return tau.tauID(label);
-}
-
 static bool tauPassesId(const pat::Tau &tau, const std::string &vsJet,
                         const std::string &vsEle, const std::string &vsMu) {
   auto check = [&tau](const std::string &label) -> bool {
@@ -848,8 +809,7 @@ private:
   float met_pt_, met_phi_, metNoMu_pt_, metNoMu_phi_;
   float rho_all_, rho_allCalo_, rho_centralCalo_;
   TrkBranches trk_;
-  LepKin muon_, ele_;
-  TauKin tau_;
+  LepKin muon_, ele_, tau_;
   JetBranches jet_;
   VertexBranches vtx_;
 };
@@ -1091,30 +1051,6 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     tau_.isTight.push_back(
         tauPassesId(tau, tauVsJetLabel_, tauVsEleLabel_, tauVsMuLabel_));
     tau_.pfRelIso04_dBeta.push_back(-1.f);
-//    tau_.dz.push_back(
-//    tau.leadChargedHadrCand().isNonnull()
-//        ? tau.leadChargedHadrCand()->dz()
-//        : 999.0f
-//    );
-
-    tau_.decayMode.push_back(tau.decayMode());
-
-    tau_.decayModeFindingNewDMs.push_back(
-        tauIdValue(tau, "decayModeFindingNewDMs") > 0.5f
-    );
-
-    tau_.deepTau2018v2p5VSjet.push_back(
-        tauIdValue(tau, "byDeepTau2018v2p5VSjetraw")
-    );
-
-    tau_.deepTau2018v2p5VSe.push_back(
-        tauIdValue(tau, "byDeepTau2018v2p5VSeraw")
-    );
-
-    tau_.deepTau2018v2p5VSmu.push_back(
-        tauIdValue(tau, "byDeepTau2018v2p5VSmuraw")
-    );
-
   }
 
   // ── Fill tracks ───────────────────────────────────────────────────────────

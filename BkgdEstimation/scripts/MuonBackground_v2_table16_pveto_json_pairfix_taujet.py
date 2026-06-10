@@ -63,7 +63,7 @@ def trans_mass(arrays, prefix):
     )
 
 
-def min_delta_r_mask(arrays, prefix, min_dr, obj_mask=None):
+def min_delta_r_mask(arrays, prefix, min_dr):
     """
     Per-track mask requiring min DeltaR(track, object) > min_dr.
 
@@ -80,9 +80,6 @@ def min_delta_r_mask(arrays, prefix, min_dr, obj_mask=None):
         "eta": arrays[f"{prefix}_eta"],
         "phi": arrays[f"{prefix}_phi"],
     })
-
-    if obj_mask is not None:
-        objs = objs[obj_mask]
 
     trk, obj = ak.unzip(ak.cartesian([tracks, objs], nested=True))
 
@@ -159,8 +156,8 @@ def probe_track_denominator_mask(arrays, layer):
     # The following Table 16 cuts need branches/maps not present in this flat ntuple
     # or are applied upstream in the ntuplizer/preselection:
     #   min DeltaR(track, noisy/dead ECAL channel) > 0.05  [applied upstream]
-    #   |dz| > 0.5 cm OR |lambda| > 1e-3                Added below
-    mask = mask & ((np.abs(arrays["trk_dz"]) > 0.5) | (np.abs((np.pi / 2.0) - arrays["trk_theta"]) > 1.0e-3))
+    #   |dz| > 0.5 cm OR |lambda| > 1e-3                [not available here]
+
     mask = mask & (arrays["trk_hp_numberOfValidPixelHits"] >= 4)
     mask = mask & (arrays["trk_missingInnerHits"] == 0)
     mask = mask & (arrays["trk_hitDrop_missingMiddleHits"] == 0)
@@ -170,21 +167,7 @@ def probe_track_denominator_mask(arrays, layer):
 
     # Table 16 track-jet and lepton-veto rows.
     # Keep the muon veto OUT of the denominator; it is the Pveto numerator split.
-    good_jet = (
-        (arrays["jet_pt"] > 30)
-        & (np.abs(arrays["jet_eta"]) < 4.5)
-        & arrays["jet_isTightLepVeto"]
-    )
-    good_ele = (
-        (arrays["ele_pt"] > 10.0)
-        & (np.abs(arrays["ele_eta"]) < 2.5)
-    )
-
-    good_mu = (
-        (arrays["muon_pt"] > 10.0)
-        & (np.abs(arrays["muon_eta"]) < 2.4)
-    )
-    mask = mask & min_delta_r_mask(arrays, "jet", 0.5, obj_mask=good_jet)
+    #mask = mask & min_delta_r_mask(arrays, "jet", 0.5)
     mask = mask & min_delta_r_mask(arrays, "ele", 0.15)
     #mask = mask & min_delta_r_mask(arrays, "tau", 0.15)
 
@@ -278,13 +261,6 @@ def make_tp_cutflow(arrays, layer):
     trk = trk & ((np.abs(arrays["trk_eta"]) < 1.55) | (np.abs(arrays["trk_eta"]) > 1.85))
     add(">= 1 tracks |eta| < 1.55 OR |eta| > 1.85", ak.any(trk, axis=1))
 
-    trk = trk & (
-        (np.abs(arrays["trk_dz"]) > 0.5)
-        |
-        (np.abs((np.pi / 2.0) - arrays["trk_theta"]) > 1.0e-3)
-    )
-    add(">= 1 tracks |dz| > 0.5 cm OR |lambda| > 1e-3", ak.any(trk, axis=1))
-
     trk = trk & (arrays["trk_hp_numberOfValidPixelHits"] >= 4)
     add(">= 1 tracks number of pixel hits >= 4", ak.any(trk, axis=1))
 
@@ -321,7 +297,6 @@ def make_tp_cutflow(arrays, layer):
     trk_obj, mu_obj = ak.unzip(ak.cartesian([tracks_pre_veto, muons], nested=True))
 
     mass = (trk_obj + mu_obj).mass
-    
     pair_mass_gt_10 = mass > 10
     add(">= 1 track-muon pairs Mtrack,muon > 10 GeV", any_pair_per_event(pair_mass_gt_10))
 
@@ -397,9 +372,9 @@ def count_pveto_pairs(arrays, layer):
         z_window & ss_pair & ~passes_missing_outer
     )
 
-    #print(layer, "SS fail veto:", debug_ss_fail_veto)
-    #print(layer, "SS fail muon veto:", debug_ss_fail_muon_veto)
-    #print(layer, "SS fail missingOuter:", debug_ss_fail_outer)
+    print(layer, "SS fail veto:", debug_ss_fail_veto)
+    print(layer, "SS fail muon veto:", debug_ss_fail_muon_veto)
+    print(layer, "SS fail missingOuter:", debug_ss_fail_outer)
 
     # ============================================
 
@@ -432,18 +407,13 @@ def process_file_set(files, tree_name, layer, chunk_size):
         "muon_isTight",
         "ele_eta",
         "ele_phi",
-        "ele_pt",
-        "ele_isTight",
         "tau_eta",
         "tau_phi",
         "jet_eta",
         "jet_phi",
-        "jet_pt",
-        "jet_isTightLepVeto",
         "trk_pt",
         "trk_eta",
         "trk_phi",
-        "trk_theta",
         "trk_charge",
         "trk_dxy",
         "trk_dz",
