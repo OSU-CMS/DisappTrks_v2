@@ -37,21 +37,21 @@ dataset="/EGamma/Run2022E-22Sep2023-v1/MINIAOD"
 era = "F"
 
 [2022.F.Tau]
-dataset="/Muon/Run2022F-19Dec2023-v1/MINIAOD"
+dataset="/Muon/Run2022F-PromptReco-v1/MINIAOD"
 [2022.F.v1.Muon0]
 dataset="/Muon/Run2022F-PromptReco-v1/MINIAOD"
 [2022.F.EGamma]
-dataset="/EGamma/Run2022F-19Dec2023-v1/MINIAOD"
+dataset="/EGamma/Run2022F-PromptReco-v1/MINIAOD"
 
 [2022.G]
 era ="G"
 
 [2022.G.Tau]
-dataset="/Muon/Run2022G-19Dec2023-v2/MINIAOD"
+dataset="/Muon/Run2022G-PromptReco-v1/MINIAOD"
 [2022.G.Muon]
 dataset="/Muon/Run2022G-PromptReco-v1/MINIAOD"
 [2022.G.EGamma]
-dataset="/EGamma/Run2022G-19Dec2023-v1/MINIAOD"
+dataset="/EGamma/Run2022G-PromptReco-v1/MINIAOD"
 
 [2023]
 lumiMask="https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions23/Cert_Collisions2023_366442_370790_Golden.json"
