@@ -220,9 +220,11 @@ process.hltFilter = cms.EDFilter(
     HLTPaths=triggerPaths[options.trigger],
 )
 
+met_filter_process = "RECO" if options.year.startswith("2025") else "PAT"
+
 process.metFilters = cms.EDFilter("HLTHighLevel",
     # TriggerResultsTag  = cms.InputTag("TriggerResults", "", "RECO"), # Should be RECO for 2025 and PAT for 2024  # newer data
-    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "PAT"),  # 2022 22Sep2023 re-reco MINIAOD uses PAT
+    TriggerResultsTag  = cms.InputTag("TriggerResults", "", met_filter_process),  # 2022 22Sep2023 re-reco MINIAOD uses PAT
     eventSetupPathsKey = cms.string(""),
     andOr              = cms.bool(False),   # AND — must pass all filters
     throw              = cms.bool(False),
