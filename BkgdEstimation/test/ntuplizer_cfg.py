@@ -17,10 +17,19 @@ the original 2024/2025 settings commented out and marked "newer data". The
 trigger list, electron ID label) follow AN-2024-155 v4 §2-4.
 """
 import os
+import copy
 import FWCore.ParameterSet.Config as cms
 from Configuration.AlCa.GlobalTag import GlobalTag
 from FWCore.ParameterSet.VarParsing import VarParsing
 from DisappTrks_v2.BkgdEstimation.EcalBadCalibFilter_cff import addEcalBadCalibFilter
+from OSUT3Analysis.Configuration.CollectionProducer_cff import collectionProducer
+from OSUT3Analysis.AnaTools.osuAnalysis_cfi import collectionMapMiniAOD2022
+from PhysicsTools.SelectorUtils.tools.vid_id_tools import (
+    DataFormat,
+    setupAllVIDIdsInModule,
+    setupVIDElectronSelection,
+    switchOnVIDElectronIdProducer,
+)
 
 # VarParsing allows you to configure the cfg file from the command-line. The format
 # for using these options are:
@@ -285,6 +294,40 @@ process.load("DisappTrks_v2.BkgdEstimation.JecAppliedJetProducer_cfi")
 process.load("DisappTrks_v2.BkgdEstimation.JecAppliedMetProducer_cfi")
 process.load("DisappTrks_v2.BkgdEstimation.JvmAppliedEventFilter_cfi")
 
+# OSUT3-decorated tracks reproduce the V1 disappearing-track helper values
+# used by the strict muon Pveto cutflow.
+switchOnVIDElectronIdProducer(process, DataFormat.MiniAOD)
+setupAllVIDIdsInModule(
+    process,
+    "RecoEgamma.ElectronIdentification.Identification.cutBasedElectronID_Winter22_122X_V1_cff",
+    setupVIDElectronSelection,
+)
+
+osuCollectionsForNtuplizer = copy.deepcopy(collectionMapMiniAOD2022)
+
+process.osuMcparticlesForNtuplizer = collectionProducer.mcparticles.clone()
+process.osuMcparticlesForNtuplizer.collections = copy.deepcopy(osuCollectionsForNtuplizer)
+
+process.osuMetsForNtuplizer = collectionProducer.mets.clone()
+process.osuMetsForNtuplizer.collections = copy.deepcopy(osuCollectionsForNtuplizer)
+
+process.osuTracksForNtuplizer = collectionProducer.tracks.clone()
+process.osuTracksForNtuplizer.collections = copy.deepcopy(osuCollectionsForNtuplizer)
+process.osuTracksForNtuplizer.collections.mcparticles = cms.InputTag(
+    "osuMcparticlesForNtuplizer",
+    osuCollectionsForNtuplizer.mcparticles.getProductInstanceLabel(),
+)
+process.osuTracksForNtuplizer.collections.mets = cms.InputTag(
+    "osuMetsForNtuplizer",
+    osuCollectionsForNtuplizer.mets.getProductInstanceLabel(),
+)
+process.osuTracksForNtuplizer.fiducialMaps.electrons[0].histFile = cms.FileInPath(
+    electron_fiducial_map
+)
+process.osuTracksForNtuplizer.fiducialMaps.muons[0].histFile = cms.FileInPath(
+    muon_fiducial_map
+)
+
 
 # Allows you to set that year that should be used for the JEC and JVM values.
 # In 2024 and 2025, the key is of the format Era2024All and Era2025All.
@@ -326,13 +369,14 @@ process.JvmAppliedEventFilter.Jets.Year = cms.string(jvm_year_key)
 
 
 process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
-    tracks       = cms.InputTag("isolatedTracks"),
+    tracks       = cms.InputTag("osuTracksForNtuplizer"),
     met          = cms.InputTag("jecAppliedMetProducer", "CorrectedMet"),
     muons        = cms.InputTag("slimmedMuons"),
     electrons    = cms.InputTag("slimmedElectrons"),
     taus         = cms.InputTag("slimmedTaus"),
     vertices     = cms.InputTag("offlineSlimmedPrimaryVertices"),
     jets         = cms.InputTag("jecAppliedJetProducer", "CorrectedAK4"),
+    jetVetoMapJets = cms.InputTag("slimmedJetsPuppi"),
     treeName     = cms.string("Events"),
     triggerResults       = cms.InputTag("TriggerResults", "", "HLT"),
     triggerObjects       = cms.InputTag("slimmedPatTrigger"),
@@ -369,17 +413,21 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     rhoAll               = cms.InputTag("fixedGridRhoFastjetAll"),
     rhoAllCalo           = cms.InputTag("fixedGridRhoFastjetAllCalo"),
     rhoCentralCalo       = cms.InputTag("fixedGridRhoFastjetCentralCalo"),
-    maskedEcalChannelStatusThreshold = cms.int32(3)
+    maskedEcalChannelStatusThreshold = cms.int32(3),
+    jetVetoMap = cms.FileInPath("OSUT3Analysis/Configuration/data/Summer24Prompt24_RunBCDEFGHI.root"),
 )
 
 process.p = cms.Path(
+    process.egmGsfElectronIDSequence *
     process.hltFilter *
     process.metFilters *
     #process.ecalBadCalibReducedMINIAODFilter*
     #process.ecalBadCalibFilter *
     process.TrackEcalDeadChannelFilter *
-    process.JvmAppliedEventFilter *
     process.jecAppliedJetProducer *
     process.jecAppliedMetProducer *
+    process.osuMcparticlesForNtuplizer *
+    process.osuMetsForNtuplizer *
+    process.osuTracksForNtuplizer *
     process.ntuplizer
 )

@@ -78,6 +78,10 @@
 #include "FWCore/ParameterSet/interface/FileInPath.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
+#include "FWCore/Utilities/interface/Exception.h"
+
+#include "TFile.h"
+#include "TH2.h"
 
 // PAT objects
 #include "DataFormats/PatCandidates/interface/Electron.h"
@@ -88,6 +92,8 @@
 #include "DataFormats/PatCandidates/interface/Tau.h"
 #include "DataFormats/PatCandidates/interface/TriggerObjectStandAlone.h"
 #include "DataFormats/VertexReco/interface/Vertex.h"
+#include "OSUT3Analysis/Collections/interface/DisappearingTrack.h"
+#include "OSUT3Analysis/AnaTools/interface/CommonUtils.h"
 
 // ECAL Imports
 #include "CondFormats/DataRecord/interface/EcalChannelStatusRcd.h"
@@ -813,13 +819,13 @@ struct EtaPhiHotSpot {
   double eta, phi, sigma;
 };
 
-struct EtaPhiList : public std::vector<EtaPhiHotSpot> {
+struct NtuplizerEtaPhiList : public std::vector<EtaPhiHotSpot> {
   double minDeltaR = 0.0;
 };
 
 static void extractFiducialMap(const edm::ParameterSet &cfg,
                                bool useEraByEraFiducialMaps,
-                               EtaPhiList &vetoList) {
+                               NtuplizerEtaPhiList &vetoList) {
   const edm::FileInPath &histFile =
       cfg.getParameter<edm::FileInPath>("histFile");
   const std::string &era = cfg.getParameter<std::string>("era");
@@ -910,7 +916,7 @@ static void extractFiducialMap(const edm::ParameterSet &cfg,
 }
 
 static bool passesFiducialMap(double eta, double phi,
-                              const EtaPhiList &vetoList,
+                              const NtuplizerEtaPhiList &vetoList,
                               double minDeltaR) {
   const double minDR = std::max(minDeltaR, vetoList.minDeltaR);
   for (const auto &hotSpot : vetoList) {
@@ -921,23 +927,24 @@ static bool passesFiducialMap(double eta, double phi,
 }
 
 static bool jetPassesTightLepVeto(const pat::Jet &jet) {
-  const float absEta = std::abs(jet.eta());
-  if (absEta <= 2.6)
-    return jet.neutralHadronEnergyFraction() < 0.99 &&
-           jet.neutralEmEnergyFraction() < 0.9 &&
-           jet.numberOfDaughters() > 1 && jet.muonEnergyFraction() < 0.8 &&
-           jet.chargedHadronEnergyFraction() > 0.01 &&
-           jet.chargedMultiplicity() > 0 &&
-           jet.chargedEmEnergyFraction() < 0.8;
-  if (absEta <= 2.7)
-    return jet.neutralHadronEnergyFraction() < 0.9 &&
-           jet.neutralEmEnergyFraction() < 0.99 &&
-           jet.muonEnergyFraction() < 0.8 &&
-           jet.chargedEmEnergyFraction() < 0.8;
-  if (absEta <= 3.0)
-    return jet.neutralHadronEnergyFraction() < 0.99;
-  return jet.neutralEmEnergyFraction() < 0.4 &&
-         jet.neutralMultiplicity() >= 2;
+  return anatools::jetPassesTightLepVeto(jet);
+}
+
+static bool jetPassesV1JetVetoMapSelection(const pat::Jet &jet,
+                                           const std::vector<pat::Muon> &muons) {
+  if (jet.pt() < 15.0)
+    return false;
+
+  // Mirrors DisappTrks V1 EventJetVarProducer::jetLooseSelection exactly.
+  if (jet.neutralEmEnergyFraction() < 0.9)
+    return false;
+
+  for (const auto &mu : muons) {
+    if (reco::deltaR(jet.eta(), jet.phi(), mu.eta(), mu.phi()) < 0.2)
+      return false;
+  }
+
+  return jetPassesTightLepVeto(jet);
 }
 
 // ── Hit-drop helper
@@ -982,11 +989,12 @@ public:
   void endRun(const edm::Run &, const edm::EventSetup &) override {};
 
 private:
-  edm::EDGetTokenT<std::vector<pat::IsolatedTrack>> trackToken_;
+  edm::EDGetTokenT<std::vector<osu::Track>> trackToken_;
   edm::EDGetTokenT<std::vector<pat::MET>> metToken_;
   edm::EDGetTokenT<std::vector<pat::Muon>> muonToken_;
   edm::EDGetTokenT<std::vector<pat::Electron>> electronToken_;
   edm::EDGetTokenT<std::vector<pat::Jet>> jetToken_;
+  edm::EDGetTokenT<std::vector<pat::Jet>> jetVetoMapJetToken_;
   edm::EDGetTokenT<std::vector<pat::Tau>> tauToken_;
   edm::EDGetTokenT<std::vector<reco::Vertex>> vertexToken_;
   edm::EDGetTokenT<edm::TriggerResults> triggerResultsToken_;
@@ -1003,13 +1011,15 @@ private:
   float triggerMatchingDR_;
   float hitInefficiency_;
   double minDeltaRForFiducialTrack_;
-  EtaPhiList electronFiducialVetoList_, muonFiducialVetoList_;
+  NtuplizerEtaPhiList electronFiducialVetoList_, muonFiducialVetoList_;
   std::mt19937 rng_;
 
   edm::ESGetToken<CaloGeometry, CaloGeometryRecord> caloGeometryToken_;
   edm::ESGetToken<EcalChannelStatus, EcalChannelStatusRcd> ecalStatusToken_;
   int maskedEcalChannelStatusThreshold_;
   std::map<DetId, std::pair<double, double>> maskedEcalChannels_;
+  std::unique_ptr<TFile> jetVetoMapFile_;
+  TH2 *jetVetoMap_;
 
   TTree *tree_;
 
@@ -1017,6 +1027,7 @@ private:
   unsigned long long eventNum_;
   float met_pt_, met_phi_, metNoMu_pt_, metNoMu_phi_;
   float rho_all_, rho_allCalo_, rho_centralCalo_;
+  bool jetVeto2022_;
   TrkBranches trk_;
   LepKin muon_, ele_;
   TauKin tau_;
@@ -1027,7 +1038,7 @@ private:
 // ── Constructor
 // ───────────────────────────────────────────────────────────────
 Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
-    : trackToken_(consumes<std::vector<pat::IsolatedTrack>>(
+    : trackToken_(consumes<std::vector<osu::Track>>(
           iConfig.getParameter<edm::InputTag>("tracks"))),
       metToken_(consumes<std::vector<pat::MET>>(
           iConfig.getParameter<edm::InputTag>("met"))),
@@ -1037,6 +1048,8 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
           iConfig.getParameter<edm::InputTag>("electrons"))),
       jetToken_(consumes<std::vector<pat::Jet>>(
           iConfig.getParameter<edm::InputTag>("jets"))),
+      jetVetoMapJetToken_(consumes<std::vector<pat::Jet>>(
+          iConfig.getParameter<edm::InputTag>("jetVetoMapJets"))),
       tauToken_(consumes<std::vector<pat::Tau>>(
           iConfig.getParameter<edm::InputTag>("taus"))),
       vertexToken_(consumes<std::vector<reco::Vertex>>(
@@ -1088,6 +1101,19 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   maskedEcalChannelStatusThreshold_ =
       iConfig.getParameter<int>("maskedEcalChannelStatusThreshold");
 
+  const auto jetVetoMapPath =
+      iConfig.getParameter<edm::FileInPath>("jetVetoMap").fullPath();
+  jetVetoMapFile_.reset(TFile::Open(jetVetoMapPath.c_str(), "READ"));
+  if (!jetVetoMapFile_ || jetVetoMapFile_->IsZombie()) {
+    throw cms::Exception("Ntuplizer")
+        << "Could not open jet veto map file: " << jetVetoMapPath;
+  }
+  jetVetoMap_ = dynamic_cast<TH2 *>(jetVetoMapFile_->Get("jetvetomap"));
+  if (!jetVetoMap_) {
+    throw cms::Exception("Ntuplizer")
+        << "Could not find TH2 jetvetomap in: " << jetVetoMapPath;
+  }
+
   usesResource(TFileService::kSharedResource);
   edm::Service<TFileService> fs;
   tree_ = fs->make<TTree>(iConfig.getParameter<std::string>("treeName").c_str(),
@@ -1103,6 +1129,7 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   tree_->Branch("rho_all", &rho_all_);
   tree_->Branch("rho_allCalo", &rho_allCalo_);
   tree_->Branch("rho_centralCalo", &rho_centralCalo_);
+  tree_->Branch("jetVeto2022", &jetVeto2022_);
 
   trk_.book(tree_, "trk");
   muon_.book(tree_, "muon");
@@ -1168,11 +1195,12 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
             static_cast<uint32_t>(lumi_) * 40503UL ^
             static_cast<uint32_t>(eventNum_));
 
-  edm::Handle<std::vector<pat::IsolatedTrack>> tracks;
+  edm::Handle<std::vector<osu::Track>> tracks;
   edm::Handle<std::vector<pat::MET>> mets;
   edm::Handle<std::vector<pat::Muon>> muons;
   edm::Handle<std::vector<pat::Electron>> electrons;
   edm::Handle<std::vector<pat::Jet>> jets;
+  edm::Handle<std::vector<pat::Jet>> jetVetoMapJets;
   edm::Handle<std::vector<pat::Tau>> taus;
   edm::Handle<std::vector<reco::Vertex>> vertices;
   edm::Handle<edm::TriggerResults> triggerResults;
@@ -1184,6 +1212,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   iEvent.getByToken(muonToken_, muons);
   iEvent.getByToken(electronToken_, electrons);
   iEvent.getByToken(jetToken_, jets);
+  iEvent.getByToken(jetVetoMapJetToken_, jetVetoMapJets);
   iEvent.getByToken(tauToken_, taus);
   iEvent.getByToken(vertexToken_, vertices);
   iEvent.getByToken(triggerResultsToken_, triggerResults);
@@ -1194,6 +1223,19 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
   rho_all_ = *rhoAll;
   rho_allCalo_ = *rhoAllCalo;
   rho_centralCalo_ = *rhoCentralCalo;
+
+  jetVeto2022_ = true;
+  if (jetVetoMapJets.isValid() && muons.isValid()) {
+    for (const auto &jet : *jetVetoMapJets) {
+      if (!jetPassesV1JetVetoMapSelection(jet, *muons))
+        continue;
+      if (jetVetoMap_->GetBinContent(
+              jetVetoMap_->FindFixBin(jet.eta(), jet.phi())) > 0) {
+        jetVeto2022_ = false;
+        break;
+      }
+    }
+  }
 
   // Collect (eta, phi) of trigger objects for muon and electron tag filters —
   // unpack once.
@@ -1334,11 +1376,9 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     const float caloEm = trk.matchedCaloJetEmEnergy();
     const float caloHad = trk.matchedCaloJetHadEnergy();
     const float caloTot = caloEm + caloHad;
-    // PU-corrected calo energy: max(0, E_raw - rho * pi * dR^2), dR=0.4,
-    // CentralCalo rho Mirrors caloNewFromCaloJetNoPUDRp4CentralCalo from the
-    // old OSUT3Analysis framework.
-    const float caloTotNoPU =
-        std::max(0.f, caloTot - (float)(rho_centralCalo_ * M_PI * 0.4 * 0.4));
+    // Pveto uses the OSUT3 disappearing-track calo value, not a hand-made
+    // approximation from the PAT matched calo jet.
+    const float caloTotNoPU = trk.caloNewFromCaloJetNoPUDRp4CentralCalo();
     trk_.caloEm.push_back(caloEm);
     trk_.caloHad.push_back(caloHad);
     trk_.caloTotal.push_back(caloTot);
@@ -1366,46 +1406,13 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.miniIso_relative.push_back(trk.pt() > 0.f ? miniChHad / trk.pt()
                                                    : -1.f);
 
-    float dRMinJet = -1.f;
-    for (const auto &jet : *jets) {
-      if (jet.pt() <= 30.f || std::abs(jet.eta()) >= 4.5f ||
-          !jetPassesTightLepVeto(jet))
-        continue;
-      const float dR = reco::deltaR(trk.eta(), trk.phi(), jet.eta(), jet.phi());
-      if (dRMinJet < 0.f || dR < dRMinJet)
-        dRMinJet = dR;
-    }
-    trk_.dRMinJet.push_back(dRMinJet);
-
-    auto closestDR = [&trk](const auto &objects, auto passObj) -> float {
-      float minDR = -1.f;
-      for (const auto &obj : objects) {
-        if (!passObj(obj))
-          continue;
-        const float dR = reco::deltaR(trk.eta(), trk.phi(), obj.eta(), obj.phi());
-        if (minDR < 0.f || dR < minDR)
-          minDR = dR;
-      }
-      return minDR;
-    };
-    trk_.deltaRToClosestElectron.push_back(
-        closestDR(*electrons, [](const pat::Electron &) { return true; }));
-    trk_.deltaRToClosestMuon.push_back(
-        closestDR(*muons, [](const pat::Muon &) { return true; }));
-    trk_.deltaRToClosestTauHad.push_back(
-        closestDR(*taus, [this](const pat::Tau &tau) {
-          return tauPassesId(tau, tauVsJetLabel_, tauVsEleLabel_, tauVsMuLabel_);
-        }));
-
-    const bool inTOBCrack = std::abs(trk.dz()) < 0.5f &&
-                             std::abs(M_PI_2 - trk.theta()) < 1.0e-3f;
-    trk_.inTOBCrack.push_back(inTOBCrack);
-    trk_.isFiducialElectronTrack.push_back(passesFiducialMap(
-        trk.eta(), trk.phi(), electronFiducialVetoList_,
-        minDeltaRForFiducialTrack_));
-    trk_.isFiducialMuonTrack.push_back(passesFiducialMap(
-        trk.eta(), trk.phi(), muonFiducialVetoList_,
-        minDeltaRForFiducialTrack_));
+    trk_.dRMinJet.push_back(trk.dRMinJet());
+    trk_.deltaRToClosestElectron.push_back(trk.deltaRToClosestElectron());
+    trk_.deltaRToClosestMuon.push_back(trk.deltaRToClosestMuon());
+    trk_.deltaRToClosestTauHad.push_back(trk.deltaRToClosestTauHad());
+    trk_.inTOBCrack.push_back(trk.inTOBCrack());
+    trk_.isFiducialElectronTrack.push_back(trk.isFiducialElectronTrack());
+    trk_.isFiducialMuonTrack.push_back(trk.isFiducialMuonTrack());
 
     // ── Derived
     // ───────────────────────────────────────────────────────────────
@@ -1428,9 +1435,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.missingInnerHits.push_back(mmInner);
     trk_.missingMiddleHits.push_back(mmMiddle);
     trk_.missingOuterHits.push_back(mmOuter);
-    trk_.hitDrop_missingMiddleHits.push_back(
-        computeHitDropMissingMiddleHits(hp, rng_, hitInefficiency_));
-    trk_.hitDrop_missingOuterHits.push_back(mmOuter);
+    trk_.hitDrop_missingMiddleHits.push_back(trk.hitDrop_bestTrackMissingMiddleHits());
+    trk_.hitDrop_missingOuterHits.push_back(trk.hitAndTOBDrop_bestTrackMissingOuterHits());
 
     trk_.hp_numberOfAllHits.push_back(hp.numberOfAllHits(HP::TRACK_HITS));
     trk_.hp_numberOfAllTrackerHits.push_back(

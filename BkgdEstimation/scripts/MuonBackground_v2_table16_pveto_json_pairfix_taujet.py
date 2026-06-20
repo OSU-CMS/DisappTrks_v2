@@ -128,13 +128,18 @@ def fiducial_eta_mask(arrays):
     )
 
 
-def muon_tag_mask(arrays):
-    mask = arrays["muon_isTrigMatched"]
-    mask = mask & (arrays["muon_pt"] > 26)
+def muon_quality_mask(arrays):
+    """MuonTagSkim-quality muon rows before the per-muon trigger match."""
+    mask = arrays["muon_pt"] > 26
     mask = mask & (np.abs(arrays["muon_eta"]) < 2.1)
     mask = mask & arrays["muon_isTight"]
     mask = mask & (arrays["muon_pfRelIso04_dBeta"] < 0.15)
     return mask
+
+
+def muon_tag_mask(arrays):
+    """V1 ZtoMuProbeTrk tag muon: MuonTagSkim quality plus trigger match."""
+    return muon_quality_mask(arrays) & arrays["muon_isTrigMatched"]
 
 
 def probe_track_denominator_mask(arrays, layer):
@@ -162,8 +167,8 @@ def probe_track_denominator_mask(arrays, layer):
     mask = mask & (np.abs(arrays["trk_dz"]) < 0.5)
     mask = mask & (arrays["trk_dRMinJet"] > 0.5)
 
-    # cutVetoJetMap2022 is event-level and is applied upstream by
-    # process.JvmAppliedEventFilter before the ntuplizer writes an event.
+    # cutVetoJetMap2022 is event-level. Apply it in count_pveto_pairs,
+    # after the track-row mask is formed, to mirror the V1 cutflow order.
 
     mask = mask & (arrays["trk_deltaRToClosestElectron"] > 0.15)
     mask = mask & (arrays["trk_deltaRToClosestTauHad"] > 0.15)
@@ -209,8 +214,7 @@ def make_tp_cutflow(arrays, layer):
         ak.ones_like(arrays["metNoMu_pt"], dtype=bool),
     )
 
-    mu = arrays["muon_isTrigMatched"]
-    mu = mu & (arrays["muon_pt"] > 26)
+    mu = arrays["muon_pt"] > 26
     add(">= 1 muons pT > 26 GeV", ak.any(mu, axis=1))
 
     mu = mu & (np.abs(arrays["muon_eta"]) < 2.1)
@@ -222,7 +226,8 @@ def make_tp_cutflow(arrays, layer):
     mu = mu & (arrays["muon_pfRelIso04_dBeta"] < 0.15)
     add(">= 1 muons rel. PF iso. < 0.15", ak.any(mu, axis=1))
 
-    add("exactly one passing muon chosen randomly", ak.any(mu, axis=1))
+    mu = mu & arrays["muon_isTrigMatched"]
+    add(">= 1 muons firing trigger", ak.any(mu, axis=1))
 
     trk = arrays["trk_pt"] > 30
     add(">= 1 tracks pT > 30 GeV", ak.any(trk, axis=1))
@@ -230,11 +235,11 @@ def make_tp_cutflow(arrays, layer):
     trk = trk & (np.abs(arrays["trk_eta"]) < 2.1)
     add(">= 1 tracks |eta| < 2.1", ak.any(trk, axis=1))
 
-    trk = trk & ((np.abs(arrays["trk_eta"]) < 0.15) | (np.abs(arrays["trk_eta"]) > 0.35))
-    add(">= 1 tracks |eta| < 0.15 OR |eta| > 0.35", ak.any(trk, axis=1))
-
     trk = trk & ((np.abs(arrays["trk_eta"]) < 1.42) | (np.abs(arrays["trk_eta"]) > 1.65))
     add(">= 1 tracks |eta| < 1.42 OR |eta| > 1.65", ak.any(trk, axis=1))
+
+    trk = trk & ((np.abs(arrays["trk_eta"]) < 0.15) | (np.abs(arrays["trk_eta"]) > 0.35))
+    add(">= 1 tracks |eta| < 0.15 OR |eta| > 0.35", ak.any(trk, axis=1))
 
     trk = trk & ((np.abs(arrays["trk_eta"]) < 1.55) | (np.abs(arrays["trk_eta"]) > 1.85))
     add(">= 1 tracks |eta| < 1.55 OR |eta| > 1.85", ak.any(trk, axis=1))
@@ -275,7 +280,7 @@ def make_tp_cutflow(arrays, layer):
     trk = trk & (arrays["trk_dRMinJet"] > 0.5)
     add(">= 1 tracks dRMinJet > 0.5", ak.any(trk, axis=1))
 
-    add("event passed jet veto map upstream", ak.any(trk, axis=1))
+    add(">= 1 eventvariables with jetVeto2022 == 1", arrays["jetVeto2022"])
 
     trk = trk & (arrays["trk_deltaRToClosestElectron"] > 0.15)
     add(">= 1 tracks min DeltaRtrack,electron > 0.15", ak.any(trk, axis=1))
@@ -306,11 +311,13 @@ def make_tp_cutflow(arrays, layer):
 
 
 def count_pveto_pairs(arrays, layer):
-    mu = muon_tag_mask(arrays)
-    trk = probe_track_denominator_mask(arrays, layer)
+    event_mask = arrays["jetVeto2022"]
+    arrays_for_counts = arrays[event_mask]
+    mu = muon_tag_mask(arrays)[event_mask]
+    trk = probe_track_denominator_mask(arrays, layer)[event_mask]
 
-    muons = build_muon_vectors(arrays, mu)
-    tracks = build_track_vectors(arrays, trk)
+    muons = build_muon_vectors(arrays_for_counts, mu)
+    tracks = build_track_vectors(arrays_for_counts, trk)
 
     trk_obj, mu_obj = ak.unzip(ak.cartesian([tracks, muons], nested=True))
 
@@ -361,6 +368,7 @@ def process_file_set(files, tree_name, layer, chunk_size):
     branches = [
         "metNoMu_pt",
         "metNoMu_phi",
+        "jetVeto2022",
         "muon_pt",
         "muon_eta",
         "muon_phi",
