@@ -86,6 +86,37 @@ def resolve_jec_tag(year, era=""):
 
     raise RuntimeError(f"Unsupported year/era for JEC mapping: year={year}, era={era}")
 
+def resolve_fiducial_map_tag(year, era=""):
+    year = str(year).strip()
+    era = str(era).strip().upper()[:1]
+
+    if year == "2022":
+        require("era", era)
+        return f"2022{era}"
+    if year.startswith("2023"):
+        if year in ("2023Pre", "2023C"):
+            return "2023C"
+        if year in ("2023Post", "2023D"):
+            return "2023D"
+    if year.startswith("2024"):
+        suffix = year[4:].strip().upper()
+        if suffix:
+            return f"2024{suffix[:1]}"
+        require("era", era)
+        return f"2024{era}"
+
+    raise RuntimeError(
+        f"No fiducial-map era can be inferred for year={year!r}, era={era!r}"
+    )
+
+fiducial_map_tag = resolve_fiducial_map_tag(options.year, options.era)
+electron_fiducial_map = (
+    f"OSUT3Analysis/Configuration/data/electronFiducialMap_{fiducial_map_tag}_data.root"
+)
+muon_fiducial_map = (
+    f"OSUT3Analysis/Configuration/data/muonFiducialMap_{fiducial_map_tag}_data.root"
+)
+
 # Define trigger sets
 triggerPaths = {
     "MET": cms.vstring(
@@ -220,9 +251,11 @@ process.hltFilter = cms.EDFilter(
     HLTPaths=triggerPaths[options.trigger],
 )
 
+met_filter_process = "RECO" if options.year.startswith("2025") else "PAT"
+
 process.metFilters = cms.EDFilter("HLTHighLevel",
     # TriggerResultsTag  = cms.InputTag("TriggerResults", "", "RECO"), # Should be RECO for 2025 and PAT for 2024  # newer data
-    TriggerResultsTag  = cms.InputTag("TriggerResults", "", "PAT"),  # 2022 22Sep2023 re-reco MINIAOD uses PAT
+    TriggerResultsTag  = cms.InputTag("TriggerResults", "", met_filter_process),
     eventSetupPathsKey = cms.string(""),
     andOr              = cms.bool(False),   # AND — must pass all filters
     throw              = cms.bool(False),
@@ -311,6 +344,28 @@ process.ntuplizer = cms.EDAnalyzer("Ntuplizer",
     tauVsJetLabel = cms.string("byTightDeepTau2018v2p5VSjet"),
     tauVsEleLabel = cms.string("byVVLooseDeepTau2018v2p5VSe"),
     tauVsMuLabel  = cms.string("byLooseDeepTau2018v2p5VSmu"),
+    fiducialMaps = cms.PSet(
+        electrons = cms.VPSet(
+            cms.PSet(
+                histFile = cms.FileInPath(electron_fiducial_map),
+                beforeVetoHistName = cms.string("beforeVeto"),
+                afterVetoHistName = cms.string("afterVeto"),
+                thresholdForVeto = cms.double(0.0),
+                era = cms.string(""),
+            ),
+        ),
+        muons = cms.VPSet(
+            cms.PSet(
+                histFile = cms.FileInPath(muon_fiducial_map),
+                beforeVetoHistName = cms.string("beforeVeto"),
+                afterVetoHistName = cms.string("afterVeto"),
+                thresholdForVeto = cms.double(0.0),
+                era = cms.string(""),
+            ),
+        ),
+    ),
+    useEraByEraFiducialMaps = cms.bool(False),
+    minDeltaRForFiducialTrack = cms.double(0.05),
     rhoAll               = cms.InputTag("fixedGridRhoFastjetAll"),
     rhoAllCalo           = cms.InputTag("fixedGridRhoFastjetAllCalo"),
     rhoCentralCalo       = cms.InputTag("fixedGridRhoFastjetCentralCalo"),

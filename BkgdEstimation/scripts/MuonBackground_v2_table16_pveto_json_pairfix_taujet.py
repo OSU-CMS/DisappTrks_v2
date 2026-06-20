@@ -129,68 +129,46 @@ def fiducial_eta_mask(arrays):
 
 
 def muon_tag_mask(arrays):
-    # Input ntuple is assumed to already be SingleMuon-triggered.
     mask = arrays["muon_isTrigMatched"]
     mask = mask & (arrays["muon_pt"] > 26)
     mask = mask & (np.abs(arrays["muon_eta"]) < 2.1)
     mask = mask & arrays["muon_isTight"]
-
-    # Section 5.1 adds this cut for charged-lepton T&P samples to reduce W+jets.
-    mask = mask & (trans_mass(arrays, "muon") < 40)
+    mask = mask & (arrays["muon_pfRelIso04_dBeta"] < 0.15)
     return mask
 
 
 def probe_track_denominator_mask(arrays, layer):
     """
-    Probe-track denominator selection for the muon Pveto measurement.
+    Strict V1 ZtoMuProbeTrk probe-track denominator.
 
-    This is the Table 16-style probe track selection with the muon veto removed.
-    The muon veto is applied only in the numerator via:
-        min DeltaR(track, muon) > 0.15
-        missing outer hits >= 3
+    The event-level trigger, MET filters, TrackEcalDeadChannelFilter, and
+    JvmAppliedEventFilter are applied while making the ntuple.  This function
+    applies the per-track rows that remain in ZtoMuProbeTrk after V1 removes
+    arbitration, M(track,muon)>10, Z-window, and OS cuts from the selection.
     """
     mask = arrays["trk_pt"] > 30
     mask = mask & (np.abs(arrays["trk_eta"]) < 2.1)
     mask = mask & fiducial_eta_mask(arrays)
-
-    # The following Table 16 cuts need branches/maps not present in this flat ntuple
-    # or are applied upstream in the ntuplizer/preselection:
-    #   min DeltaR(track, noisy/dead ECAL channel) > 0.05  [applied upstream]
-    #   |dz| > 0.5 cm OR |lambda| > 1e-3                Added below
-    mask = mask & ((np.abs(arrays["trk_dz"]) > 0.5) | (np.abs((np.pi / 2.0) - arrays["trk_theta"]) > 1.0e-3))
+    mask = mask & (~arrays["trk_inTOBCrack"])
+    mask = mask & arrays["trk_isFiducialElectronTrack"]
+    mask = mask & arrays["trk_isFiducialMuonTrack"]
+    mask = mask & arrays["trk_isFiducialECALTrack"]
     mask = mask & (arrays["trk_hp_numberOfValidPixelHits"] >= 4)
+    mask = mask & (arrays["trk_hp_numberOfValidHits"] >= 4)
     mask = mask & (arrays["trk_missingInnerHits"] == 0)
     mask = mask & (arrays["trk_hitDrop_missingMiddleHits"] == 0)
     mask = mask & (arrays["trk_relativePFIso"] < 0.05)
     mask = mask & (np.abs(arrays["trk_dxy"]) < 0.02)
     mask = mask & (np.abs(arrays["trk_dz"]) < 0.5)
+    mask = mask & (arrays["trk_dRMinJet"] > 0.5)
 
-    # Table 16 track-jet and lepton-veto rows.
-    # Keep the muon veto OUT of the denominator; it is the Pveto numerator split.
-    good_jet = (
-        (arrays["jet_pt"] > 30)
-        & (np.abs(arrays["jet_eta"]) < 4.5)
-        & arrays["jet_isTightLepVeto"]
-    )
-    good_ele = (
-        (arrays["ele_pt"] > 10.0)
-        & (np.abs(arrays["ele_eta"]) < 2.5)
-    )
+    # cutVetoJetMap2022 is event-level and is applied upstream by
+    # process.JvmAppliedEventFilter before the ntuplizer writes an event.
 
-    good_mu = (
-        (arrays["muon_pt"] > 10.0)
-        & (np.abs(arrays["muon_eta"]) < 2.4)
-    )
-    mask = mask & min_delta_r_mask(arrays, "jet", 0.5, obj_mask=good_jet)
-    mask = mask & min_delta_r_mask(arrays, "ele", 0.15)
-    #mask = mask & min_delta_r_mask(arrays, "tau", 0.15)
-
-    # Table 16 Ecalo row.
+    mask = mask & (arrays["trk_deltaRToClosestElectron"] > 0.15)
+    mask = mask & (arrays["trk_deltaRToClosestTauHad"] > 0.15)
     mask = mask & (arrays["trk_caloTotNoPU"] < 10)
-
-    # Final signal-region layer bin.
     mask = mask & layer_mask(arrays, layer)
-
     return mask
 
 
@@ -205,31 +183,18 @@ def build_muon_vectors(arrays, mask):
 
 
 def build_track_vectors(arrays, mask):
-    muon_veto = min_delta_r_mask(arrays, "muon", 0.15)
-
     return ak.zip({
         "pt": arrays["trk_pt"][mask],
         "eta": arrays["trk_eta"][mask],
         "phi": arrays["trk_phi"][mask],
         "mass": ak.ones_like(arrays["trk_pt"][mask]) * MUON_MASS,
         "charge": arrays["trk_charge"][mask],
-        "missingOuterHits": arrays["trk_missingOuterHits"][mask],
-        "passesMuonVeto": muon_veto[mask],
+        "deltaRToClosestMuon": arrays["trk_deltaRToClosestMuon"][mask],
+        "hitDropMissingOuterHits": arrays["trk_hitDrop_missingOuterHits"][mask],
     }, with_name="Momentum4D")
 
 
 def make_tp_cutflow(arrays, layer):
-    """
-    Cutflow with labels matched to Table 16 as closely as possible.
-
-    Rows that require unavailable flat-ntuple branches/maps are omitted:
-      - min DeltaR(track, noisy/dead ECAL channel) > 0.05  [applied upstream]
-      - |dz| > 0.5 cm OR |lambda| > 1e-3                [not available here]
-
-    The track-jet DeltaR, electron veto, and tau veto rows are applied here.
-    The muon veto is NOT applied to the denominator; it is used only to split
-    the Pveto numerator according to Table 21.
-    """
     cutflow = OrderedDict()
 
     event_mask = ak.ones_like(arrays["metNoMu_pt"], dtype=bool)
@@ -239,11 +204,12 @@ def make_tp_cutflow(arrays, layer):
         event_mask = event_mask & mask
         cutflow[label] = int(ak.sum(event_mask))
 
-    # The ntuple is assumed to be made from the SingleMuon-triggered dataset.
-    add("event passes SingleMuon triggers", ak.ones_like(arrays["metNoMu_pt"], dtype=bool))
+    add(
+        "event written by ntuplizer trigger/MET/JVM path",
+        ak.ones_like(arrays["metNoMu_pt"], dtype=bool),
+    )
 
     mu = arrays["muon_isTrigMatched"]
-
     mu = mu & (arrays["muon_pt"] > 26)
     add(">= 1 muons pT > 26 GeV", ak.any(mu, axis=1))
 
@@ -253,11 +219,9 @@ def make_tp_cutflow(arrays, layer):
     mu = mu & arrays["muon_isTight"]
     add(">= 1 muons passing tight muon ID", ak.any(mu, axis=1))
 
-    mu = mu & (trans_mass(arrays, "muon") < 40)
-    add(">= 1 muons MT(pTmiss, muon) < 40 GeV", ak.any(mu, axis=1))
+    mu = mu & (arrays["muon_pfRelIso04_dBeta"] < 0.15)
+    add(">= 1 muons rel. PF iso. < 0.15", ak.any(mu, axis=1))
 
-    # For the Pveto calculation in Section 5.1, all unique passing pairs are used.
-    # Keep this Table 16-style row as a bookkeeping row without reducing the sample.
     add("exactly one passing muon chosen randomly", ak.any(mu, axis=1))
 
     trk = arrays["trk_pt"] > 30
@@ -275,15 +239,23 @@ def make_tp_cutflow(arrays, layer):
     trk = trk & ((np.abs(arrays["trk_eta"]) < 1.55) | (np.abs(arrays["trk_eta"]) > 1.85))
     add(">= 1 tracks |eta| < 1.55 OR |eta| > 1.85", ak.any(trk, axis=1))
 
-    trk = trk & (
-        (np.abs(arrays["trk_dz"]) > 0.5)
-        |
-        (np.abs((np.pi / 2.0) - arrays["trk_theta"]) > 1.0e-3)
-    )
-    add(">= 1 tracks |dz| > 0.5 cm OR |lambda| > 1e-3", ak.any(trk, axis=1))
+    trk = trk & (~arrays["trk_inTOBCrack"])
+    add(">= 1 tracks not in TOB crack", ak.any(trk, axis=1))
+
+    trk = trk & arrays["trk_isFiducialElectronTrack"]
+    add(">= 1 tracks passing electron fiducial map", ak.any(trk, axis=1))
+
+    trk = trk & arrays["trk_isFiducialMuonTrack"]
+    add(">= 1 tracks passing muon fiducial map", ak.any(trk, axis=1))
+
+    trk = trk & arrays["trk_isFiducialECALTrack"]
+    add(">= 1 tracks passing ECAL dead-channel fiducial veto", ak.any(trk, axis=1))
 
     trk = trk & (arrays["trk_hp_numberOfValidPixelHits"] >= 4)
     add(">= 1 tracks number of pixel hits >= 4", ak.any(trk, axis=1))
+
+    trk = trk & (arrays["trk_hp_numberOfValidHits"] >= 4)
+    add(">= 1 tracks number of valid hits >= 4", ak.any(trk, axis=1))
 
     trk = trk & (arrays["trk_missingInnerHits"] == 0)
     add(">= 1 tracks missing inner hits = 0", ak.any(trk, axis=1))
@@ -299,38 +271,25 @@ def make_tp_cutflow(arrays, layer):
 
     trk = trk & (np.abs(arrays["trk_dz"]) < 0.5)
     add(">= 1 tracks |dz| < 0.5 cm", ak.any(trk, axis=1))
-    #good_jet = (
-    #    (arrays["jet_pt"] > 120)
-    #    & (np.abs(arrays["jet_eta"]) < 2.4)
-    #    & arrays["jet_isTightLepVeto"]
-    #)
-    trk = trk & min_delta_r_mask(arrays, "jet", 0.5, obj_mask=good_jet)
-    add(">= 1 track-jet pairs DeltaRtrack,jet > 0.5", ak.any(trk, axis=1))
 
-    # Build pre-veto tag-probe pairs for the Table 16 M(track,muon) row.
-    muons = build_muon_vectors(arrays, mu)
-    tracks_pre_veto = build_track_vectors(arrays, trk)
-    trk_obj, mu_obj = ak.unzip(ak.cartesian([tracks_pre_veto, muons], nested=True))
+    trk = trk & (arrays["trk_dRMinJet"] > 0.5)
+    add(">= 1 tracks dRMinJet > 0.5", ak.any(trk, axis=1))
 
-    mass = (trk_obj + mu_obj).mass
-    
-    pair_mass_gt_10 = mass > 10
-    add(">= 1 track-muon pairs Mtrack,muon > 10 GeV", any_pair_per_event(pair_mass_gt_10))
+    add("event passed jet veto map upstream", ak.any(trk, axis=1))
 
-    trk = trk & min_delta_r_mask(arrays, "ele", 0.15)
+    trk = trk & (arrays["trk_deltaRToClosestElectron"] > 0.15)
     add(">= 1 tracks min DeltaRtrack,electron > 0.15", ak.any(trk, axis=1))
 
-    #trk = trk & min_delta_r_mask(arrays, "tau", 0.15)
-    #add(">= 1 tracks min DeltaRtrack,had. tau > 0.15", ak.any(trk, axis=1))
+    trk = trk & (arrays["trk_deltaRToClosestTauHad"] > 0.15)
+    add(">= 1 tracks min DeltaRtrack,had. tau > 0.15", ak.any(trk, axis=1))
 
     trk = trk & (arrays["trk_caloTotNoPU"] < 10)
     add(">= 1 tracks Ecalo < 10 GeV", ak.any(trk, axis=1))
 
-    # For the Pveto calculation in Section 5.1, all unique passing pairs are used.
-    # Keep this Table 16-style row as a bookkeeping row without reducing the sample.
     add("exactly one passing track chosen randomly", ak.any(trk, axis=1))
 
     trk = trk & layer_mask(arrays, layer)
+    add(f">= 1 track nlayers selection ({layer})", ak.any(trk, axis=1))
 
     muons = build_muon_vectors(arrays, mu)
     tracks = build_track_vectors(arrays, trk)
@@ -338,12 +297,10 @@ def make_tp_cutflow(arrays, layer):
     mass = (trk_obj + mu_obj).mass
 
     z_window = (mass > Z_MASS - 10) & (mass < Z_MASS + 10)
-    add("= 1 track-muon pairs |Mtrack,muon - MZ| < 10 GeV", any_pair_per_event(z_window))
+    add(">= 1 track-muon pairs |Mtrack,muon - MZ| < 10 GeV", any_pair_per_event(z_window))
 
     os_pair = z_window & (trk_obj.charge * mu_obj.charge < 0)
-    add("= 1 track-muon pairs qtrack * qmuon < 0", any_pair_per_event(os_pair))
-
-    add(f">= 1 track nlayers >= 4 ({layer})", any_pair_per_event(os_pair))
+    add(">= 1 track-muon pairs qtrack * qmuon < 0", any_pair_per_event(os_pair))
 
     return cutflow
 
@@ -358,42 +315,15 @@ def count_pveto_pairs(arrays, layer):
     trk_obj, mu_obj = ak.unzip(ak.cartesian([tracks, muons], nested=True))
 
     mass = (trk_obj + mu_obj).mass
-    #z_window = (mass > Z_MASS - 10) & (mass < Z_MASS + 10)
-    mass_gt_10 = mass > 10.0
-    z_window = mass_gt_10 & (mass > Z_MASS - 10) & (mass < Z_MASS + 10)
+    z_window = (mass > Z_MASS - 10) & (mass < Z_MASS + 10)
 
     os_pair = trk_obj.charge * mu_obj.charge < 0
     ss_pair = trk_obj.charge * mu_obj.charge > 0
 
-    # Muon Pveto numerator from Table 21:
-    #   min DeltaR(track, muon) > 0.15
-    #   missing outer hits >= 3
-    # This is deliberately NOT part of the denominator.
-    passes_muon_veto = trk_obj.passesMuonVeto
-    passes_missing_outer = trk_obj.missingOuterHits >= 3
-    passes_veto = passes_muon_veto & passes_missing_outer
-
- # ============================================
-    # DEBUG
-    # ============================================
-
-    debug_ss_fail_veto = ak.sum(
-        z_window & ss_pair & ~passes_veto
+    passes_veto = (
+        (trk_obj.deltaRToClosestMuon > 0.15)
+        & (trk_obj.hitDropMissingOuterHits >= 3)
     )
-
-    debug_ss_fail_muon_veto = ak.sum(
-        z_window & ss_pair & ~passes_muon_veto
-    )
-
-    debug_ss_fail_outer = ak.sum(
-        z_window & ss_pair & ~passes_missing_outer
-    )
-
-    #print(layer, "SS fail veto:", debug_ss_fail_veto)
-    #print(layer, "SS fail muon veto:", debug_ss_fail_muon_veto)
-    #print(layer, "SS fail missingOuter:", debug_ss_fail_outer)
-
-    # ============================================
 
     return {
         "p_veto_den_os": float(ak.sum(z_window & os_pair)),
@@ -401,6 +331,21 @@ def count_pveto_pairs(arrays, layer):
         "p_veto_num_os": float(ak.sum(z_window & os_pair & passes_veto)),
         "p_veto_num_ss": float(ak.sum(z_window & ss_pair & passes_veto)),
     }
+
+
+
+def validate_branches(filename, tree_name, branches):
+    with uproot.open(filename) as fin:
+        if tree_name not in fin:
+            raise RuntimeError(f"{filename} does not contain tree {tree_name!r}")
+        available = set(fin[tree_name].keys())
+    missing = [branch for branch in branches if branch not in available]
+    if missing:
+        raise RuntimeError(
+            "Input is not a strict Matt/V1-compatible ntuple. "
+            f"{filename}:{tree_name} is missing branches: "
+            + ", ".join(missing)
+        )
 
 
 def process_file_set(files, tree_name, layer, chunk_size):
@@ -422,34 +367,35 @@ def process_file_set(files, tree_name, layer, chunk_size):
         "muon_charge",
         "muon_isTrigMatched",
         "muon_isTight",
-        "ele_eta",
-        "ele_phi",
-        "ele_pt",
-        "ele_isTight",
-        "tau_eta",
-        "tau_phi",
-        "jet_eta",
-        "jet_phi",
-        "jet_pt",
-        "jet_isTightLepVeto",
+        "muon_pfRelIso04_dBeta",
         "trk_pt",
         "trk_eta",
         "trk_phi",
-        "trk_theta",
         "trk_charge",
         "trk_dxy",
         "trk_dz",
+        "trk_inTOBCrack",
+        "trk_isFiducialElectronTrack",
+        "trk_isFiducialMuonTrack",
+        "trk_isFiducialECALTrack",
         "trk_missingInnerHits",
         "trk_hitDrop_missingMiddleHits",
-        "trk_missingOuterHits",
+        "trk_hitDrop_missingOuterHits",
         "trk_relativePFIso",
         "trk_caloTotNoPU",
+        "trk_dRMinJet",
+        "trk_deltaRToClosestElectron",
+        "trk_deltaRToClosestMuon",
+        "trk_deltaRToClosestTauHad",
+        "trk_hp_numberOfValidHits",
         "trk_hp_numberOfValidPixelHits",
         "trk_hp_trackerLayersWithMeasurement",
     ]
 
     for filename in files:
         tree_path = f"{filename}:{tree_name}"
+
+        validate_branches(filename, tree_name, branches)
 
         for arrays in uproot.iterate(
             tree_path,

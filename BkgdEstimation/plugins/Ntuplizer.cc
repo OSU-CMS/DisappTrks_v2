@@ -75,7 +75,9 @@
 #include "FWCore/Framework/interface/MakerMacros.h"
 #include "FWCore/Framework/interface/one/EDAnalyzer.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
+#include "FWCore/ParameterSet/interface/FileInPath.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
+#include "FWCore/MessageLogger/interface/MessageLogger.h"
 
 // PAT objects
 #include "DataFormats/PatCandidates/interface/Electron.h"
@@ -109,9 +111,15 @@
 
 // ROOT
 #include "TTree.h"
+#include "TFile.h"
+#include "TH2D.h"
 
+#include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <memory>
 #include <random>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -229,6 +237,10 @@ struct TrkBranches {
   std::vector<std::vector<uint16_t>> crossedEcalStatus;
   std::vector<std::vector<uint32_t>> crossedHcalStatus;
   std::vector<float> minDRToMaskedEcal;
+  std::vector<float> dRMinJet, deltaRToClosestElectron, deltaRToClosestMuon,
+      deltaRToClosestTauHad;
+  std::vector<bool> inTOBCrack, isFiducialElectronTrack,
+      isFiducialMuonTrack, isFiducialECALTrack;
   // ── Isolation ─────────────────────────────────────────────────────────────
   std::vector<float> pfIso, relativePFIso;
   // DR03 PF isolation components
@@ -249,7 +261,7 @@ struct TrkBranches {
   // osu::TrackBase::hitDrop_missingMiddleHits():
   //   missingMiddleHits + extra holes from stochastic strip-hit drops (MC
   //   correction). For data (hitInefficiency=0) equals missingMiddleHits.
-  std::vector<int> hitDrop_missingMiddleHits;
+  std::vector<int> hitDrop_missingMiddleHits, hitDrop_missingOuterHits;
 
   // ── Derived ───────────────────────────────────────────────────────────────
   std::vector<float> dPhiMet, dPhiMetNoMu, ptOverMetNoMu;
@@ -380,6 +392,20 @@ struct TrkBranches {
     t->Branch((pfx + "_deltaEta").c_str(), &deltaEta);
     t->Branch((pfx + "_deltaPhi").c_str(), &deltaPhi);
     t->Branch((pfx + "_minDRToMaskedEcal").c_str(), &minDRToMaskedEcal);
+    t->Branch((pfx + "_dRMinJet").c_str(), &dRMinJet);
+    t->Branch((pfx + "_deltaRToClosestElectron").c_str(),
+              &deltaRToClosestElectron);
+    t->Branch((pfx + "_deltaRToClosestMuon").c_str(),
+              &deltaRToClosestMuon);
+    t->Branch((pfx + "_deltaRToClosestTauHad").c_str(),
+              &deltaRToClosestTauHad);
+    t->Branch((pfx + "_inTOBCrack").c_str(), &inTOBCrack);
+    t->Branch((pfx + "_isFiducialElectronTrack").c_str(),
+              &isFiducialElectronTrack);
+    t->Branch((pfx + "_isFiducialMuonTrack").c_str(),
+              &isFiducialMuonTrack);
+    t->Branch((pfx + "_isFiducialECALTrack").c_str(),
+              &isFiducialECALTrack);
     // quality
     t->Branch((pfx + "_isHighPurityTrack").c_str(), &isHighPurityTrack);
     t->Branch((pfx + "_isTightTrack").c_str(), &isTightTrack);
@@ -413,6 +439,8 @@ struct TrkBranches {
     t->Branch((pfx + "_missingOuterHits").c_str(), &missingOuterHits);
     t->Branch((pfx + "_hitDrop_missingMiddleHits").c_str(),
               &hitDrop_missingMiddleHits);
+    t->Branch((pfx + "_hitDrop_missingOuterHits").c_str(),
+              &hitDrop_missingOuterHits);
     // derived
     t->Branch((pfx + "_dPhiMet").c_str(), &dPhiMet);
     t->Branch((pfx + "_dPhiMetNoMu").c_str(), &dPhiMetNoMu);
@@ -599,6 +627,14 @@ struct TrkBranches {
     dxyError.clear();
     dz.clear();
     minDRToMaskedEcal.clear();
+    dRMinJet.clear();
+    deltaRToClosestElectron.clear();
+    deltaRToClosestMuon.clear();
+    deltaRToClosestTauHad.clear();
+    inTOBCrack.clear();
+    isFiducialElectronTrack.clear();
+    isFiducialMuonTrack.clear();
+    isFiducialECALTrack.clear();
     dzError.clear();
     charge.clear();
     fromPV.clear();
@@ -621,6 +657,7 @@ struct TrkBranches {
     missingMiddleHits.clear();
     missingOuterHits.clear();
     hitDrop_missingMiddleHits.clear();
+    hitDrop_missingOuterHits.clear();
     dPhiMet.clear();
     dPhiMetNoMu.clear();
     ptOverMetNoMu.clear();
@@ -772,6 +809,137 @@ static bool tauPassesId(const pat::Tau &tau, const std::string &vsJet,
   );
 }
 
+struct EtaPhiHotSpot {
+  double eta, phi, sigma;
+};
+
+struct EtaPhiList : public std::vector<EtaPhiHotSpot> {
+  double minDeltaR = 0.0;
+};
+
+static void extractFiducialMap(const edm::ParameterSet &cfg,
+                               bool useEraByEraFiducialMaps,
+                               EtaPhiList &vetoList) {
+  const edm::FileInPath &histFile =
+      cfg.getParameter<edm::FileInPath>("histFile");
+  const std::string &era = cfg.getParameter<std::string>("era");
+  const std::string beforeName =
+      cfg.getParameter<std::string>("beforeVetoHistName") +
+      (useEraByEraFiducialMaps ? era : "");
+  const std::string afterName =
+      cfg.getParameter<std::string>("afterVetoHistName") +
+      (useEraByEraFiducialMaps ? era : "");
+  const double threshold = cfg.getParameter<double>("thresholdForVeto");
+
+  std::unique_ptr<TFile> fin(TFile::Open(histFile.fullPath().c_str()));
+  if (!fin || fin->IsZombie()) {
+    edm::LogWarning("DisappTrksv2Ntuplizer")
+        << "Cannot open fiducial map " << histFile.fullPath()
+        << "; leaving this fiducial veto list empty.";
+    return;
+  }
+
+  TH2D *beforeHistIn = dynamic_cast<TH2D *>(fin->Get(beforeName.c_str()));
+  TH2D *afterHistIn = dynamic_cast<TH2D *>(fin->Get(afterName.c_str()));
+  if (!beforeHistIn || !afterHistIn) {
+    edm::LogWarning("DisappTrksv2Ntuplizer")
+        << "Cannot find fiducial histograms " << beforeName << " and/or "
+        << afterName << " in " << histFile.fullPath()
+        << "; leaving this fiducial veto list empty.";
+    return;
+  }
+
+  std::unique_ptr<TH2D> beforeHist(static_cast<TH2D *>(beforeHistIn->Clone()));
+  std::unique_ptr<TH2D> afterHist(static_cast<TH2D *>(afterHistIn->Clone()));
+  beforeHist->SetDirectory(nullptr);
+  afterHist->SetDirectory(nullptr);
+
+  const int nX = beforeHist->GetXaxis()->GetNbins();
+  const int nY = beforeHist->GetYaxis()->GetNbins();
+  double totalBefore = 0.0;
+  double totalAfter = 0.0;
+  int nBinsWithTags = 0;
+
+  for (int i = 1; i <= nX; ++i) {
+    for (int j = 1; j <= nY; ++j) {
+      const double binRadius = std::hypot(
+          0.5 * beforeHist->GetXaxis()->GetBinWidth(i),
+          0.5 * beforeHist->GetYaxis()->GetBinWidth(j));
+      vetoList.minDeltaR = std::max(vetoList.minDeltaR, binRadius);
+
+      const double contentBefore = beforeHist->GetBinContent(i, j);
+      if (contentBefore == 0.0)
+        continue;
+      ++nBinsWithTags;
+      totalBefore += contentBefore;
+      totalAfter += afterHist->GetBinContent(i, j);
+    }
+  }
+
+  if (totalBefore == 0.0)
+    return;
+  const double meanIneff = totalAfter / totalBefore;
+  afterHist->Divide(beforeHist.get());
+
+  double stdDevIneff = 0.0;
+  for (int i = 1; i <= nX; ++i) {
+    for (int j = 1; j <= nY; ++j) {
+      if (beforeHist->GetBinContent(i, j) == 0.0)
+        continue;
+      const double diff = afterHist->GetBinContent(i, j) - meanIneff;
+      stdDevIneff += diff * diff;
+    }
+  }
+  stdDevIneff = (nBinsWithTags < 2)
+                    ? 0.0
+                    : std::sqrt(stdDevIneff / (nBinsWithTags - 1));
+
+  for (int i = 1; i <= nX; ++i) {
+    for (int j = 1; j <= nY; ++j) {
+      const double content = afterHist->GetBinContent(i, j);
+      if (!content)
+        continue;
+      if ((content - meanIneff) <= threshold * stdDevIneff)
+        continue;
+      const double sigma =
+          (stdDevIneff > 0.0) ? (content - meanIneff) / stdDevIneff : 0.0;
+      vetoList.push_back({afterHist->GetXaxis()->GetBinCenter(i),
+                          afterHist->GetYaxis()->GetBinCenter(j), sigma});
+    }
+  }
+}
+
+static bool passesFiducialMap(double eta, double phi,
+                              const EtaPhiList &vetoList,
+                              double minDeltaR) {
+  const double minDR = std::max(minDeltaR, vetoList.minDeltaR);
+  for (const auto &hotSpot : vetoList) {
+    if (reco::deltaR(eta, phi, hotSpot.eta, hotSpot.phi) < minDR)
+      return false;
+  }
+  return true;
+}
+
+static bool jetPassesTightLepVeto(const pat::Jet &jet) {
+  const float absEta = std::abs(jet.eta());
+  if (absEta <= 2.6)
+    return jet.neutralHadronEnergyFraction() < 0.99 &&
+           jet.neutralEmEnergyFraction() < 0.9 &&
+           jet.numberOfDaughters() > 1 && jet.muonEnergyFraction() < 0.8 &&
+           jet.chargedHadronEnergyFraction() > 0.01 &&
+           jet.chargedMultiplicity() > 0 &&
+           jet.chargedEmEnergyFraction() < 0.8;
+  if (absEta <= 2.7)
+    return jet.neutralHadronEnergyFraction() < 0.9 &&
+           jet.neutralEmEnergyFraction() < 0.99 &&
+           jet.muonEnergyFraction() < 0.8 &&
+           jet.chargedEmEnergyFraction() < 0.8;
+  if (absEta <= 3.0)
+    return jet.neutralHadronEnergyFraction() < 0.99;
+  return jet.neutralEmEnergyFraction() < 0.4 &&
+         jet.neutralMultiplicity() >= 2;
+}
+
 // ── Hit-drop helper
 // ─────────────────────────────────────────────────────────── Mirrors
 // osu::TrackBase::hitDrop_missingMiddleHits(): counts tracker layers without a
@@ -834,6 +1002,8 @@ private:
   std::string tauVsMuLabel_;
   float triggerMatchingDR_;
   float hitInefficiency_;
+  double minDeltaRForFiducialTrack_;
+  EtaPhiList electronFiducialVetoList_, muonFiducialVetoList_;
   std::mt19937 rng_;
 
   edm::ESGetToken<CaloGeometry, CaloGeometryRecord> caloGeometryToken_;
@@ -892,6 +1062,26 @@ Ntuplizer::Ntuplizer(const edm::ParameterSet &iConfig)
   tauVsMuLabel_ = iConfig.getParameter<std::string>("tauVsMuLabel");
   triggerMatchingDR_ = iConfig.getParameter<double>("triggerMatchingDR");
   hitInefficiency_ = iConfig.getParameter<double>("hitInefficiency");
+  minDeltaRForFiducialTrack_ = iConfig.existsAs<double>("minDeltaRForFiducialTrack")
+                                   ? iConfig.getParameter<double>("minDeltaRForFiducialTrack")
+                                   : 0.05;
+
+  if (iConfig.existsAs<edm::ParameterSet>("fiducialMaps")) {
+    const auto &fiducialMaps =
+        iConfig.getParameter<edm::ParameterSet>("fiducialMaps");
+    const bool useEraByEraFiducialMaps =
+        iConfig.existsAs<bool>("useEraByEraFiducialMaps")
+            ? iConfig.getParameter<bool>("useEraByEraFiducialMaps")
+            : false;
+    for (const auto &cfg :
+         fiducialMaps.getParameter<std::vector<edm::ParameterSet>>("electrons"))
+      extractFiducialMap(cfg, useEraByEraFiducialMaps,
+                         electronFiducialVetoList_);
+    for (const auto &cfg :
+         fiducialMaps.getParameter<std::vector<edm::ParameterSet>>("muons"))
+      extractFiducialMap(cfg, useEraByEraFiducialMaps,
+                         muonFiducialVetoList_);
+  }
 
   caloGeometryToken_ = esConsumes<edm::Transition::BeginRun>();
   ecalStatusToken_ = esConsumes<edm::Transition::BeginRun>();
@@ -1175,6 +1365,48 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.miniIso_puChHad.push_back(mini.puChargedHadronIso());
     trk_.miniIso_relative.push_back(trk.pt() > 0.f ? miniChHad / trk.pt()
                                                    : -1.f);
+
+    float dRMinJet = -1.f;
+    for (const auto &jet : *jets) {
+      if (jet.pt() <= 30.f || std::abs(jet.eta()) >= 4.5f ||
+          !jetPassesTightLepVeto(jet))
+        continue;
+      const float dR = reco::deltaR(trk.eta(), trk.phi(), jet.eta(), jet.phi());
+      if (dRMinJet < 0.f || dR < dRMinJet)
+        dRMinJet = dR;
+    }
+    trk_.dRMinJet.push_back(dRMinJet);
+
+    auto closestDR = [&trk](const auto &objects, auto passObj) -> float {
+      float minDR = -1.f;
+      for (const auto &obj : objects) {
+        if (!passObj(obj))
+          continue;
+        const float dR = reco::deltaR(trk.eta(), trk.phi(), obj.eta(), obj.phi());
+        if (minDR < 0.f || dR < minDR)
+          minDR = dR;
+      }
+      return minDR;
+    };
+    trk_.deltaRToClosestElectron.push_back(
+        closestDR(*electrons, [](const pat::Electron &) { return true; }));
+    trk_.deltaRToClosestMuon.push_back(
+        closestDR(*muons, [](const pat::Muon &) { return true; }));
+    trk_.deltaRToClosestTauHad.push_back(
+        closestDR(*taus, [this](const pat::Tau &tau) {
+          return tauPassesId(tau, tauVsJetLabel_, tauVsEleLabel_, tauVsMuLabel_);
+        }));
+
+    const bool inTOBCrack = std::abs(trk.dz()) < 0.5f &&
+                             std::abs(M_PI_2 - trk.theta()) < 1.0e-3f;
+    trk_.inTOBCrack.push_back(inTOBCrack);
+    trk_.isFiducialElectronTrack.push_back(passesFiducialMap(
+        trk.eta(), trk.phi(), electronFiducialVetoList_,
+        minDeltaRForFiducialTrack_));
+    trk_.isFiducialMuonTrack.push_back(passesFiducialMap(
+        trk.eta(), trk.phi(), muonFiducialVetoList_,
+        minDeltaRForFiducialTrack_));
+
     // ── Derived
     // ───────────────────────────────────────────────────────────────
     trk_.dPhiMet.push_back(reco::deltaPhi(trk.phi(), met.phi()));
@@ -1198,6 +1430,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     trk_.missingOuterHits.push_back(mmOuter);
     trk_.hitDrop_missingMiddleHits.push_back(
         computeHitDropMissingMiddleHits(hp, rng_, hitInefficiency_));
+    trk_.hitDrop_missingOuterHits.push_back(mmOuter);
 
     trk_.hp_numberOfAllHits.push_back(hp.numberOfAllHits(HP::TRACK_HITS));
     trk_.hp_numberOfAllTrackerHits.push_back(
@@ -1371,6 +1604,8 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
         minDR = dR;
     }
     trk_.minDRToMaskedEcal.push_back(static_cast<float>(minDR));
+    trk_.isFiducialECALTrack.push_back(
+        minDR < 0.0 || minDR > minDeltaRForFiducialTrack_);
   }
   // ── Fill jets
   for (const auto &jet : *jets) {
@@ -1379,29 +1614,7 @@ void Ntuplizer::analyze(const edm::Event &iEvent, const edm::EventSetup &) {
     jet_.phi.push_back(jet.phi());
     jet_.energy.push_back(jet.energy());
 
-    // Tight Lep Veto ID applied inline
-    const float absEta = std::abs(jet.eta());
-    bool passesTightLepVeto = false;
-
-    if (absEta <= 2.6)
-      passesTightLepVeto =
-          jet.neutralHadronEnergyFraction() < 0.99 &&
-          jet.neutralEmEnergyFraction() < 0.9 && jet.numberOfDaughters() > 1 &&
-          jet.muonEnergyFraction() < 0.8 &&
-          jet.chargedHadronEnergyFraction() > 0.01 &&
-          jet.chargedMultiplicity() > 0 && jet.chargedEmEnergyFraction() < 0.8;
-    else if (absEta <= 2.7)
-      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.9 &&
-                           jet.neutralEmEnergyFraction() < 0.99 &&
-                           jet.muonEnergyFraction() < 0.8 &&
-                           jet.chargedEmEnergyFraction() < 0.8;
-    else if (absEta <= 3.0)
-      passesTightLepVeto = jet.neutralHadronEnergyFraction() < 0.99;
-    else
-      passesTightLepVeto =
-          jet.neutralEmEnergyFraction() < 0.4 && jet.neutralMultiplicity() >= 2;
-
-    jet_.isTightLepVeto.push_back(passesTightLepVeto);
+    jet_.isTightLepVeto.push_back(jetPassesTightLepVeto(jet));
   }
 
   // ── Fill primary vertices ─────────────────────────────────────────────────
