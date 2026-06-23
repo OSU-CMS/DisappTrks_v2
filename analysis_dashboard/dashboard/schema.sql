@@ -1,0 +1,54 @@
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT '',
+  era TEXT NOT NULL DEFAULT '',
+  owner TEXT NOT NULL DEFAULT '',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  status TEXT NOT NULL DEFAULT 'not_started',
+  progress INTEGER NOT NULL DEFAULT 0,
+  depends_on TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS datasets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  era TEXT NOT NULL DEFAULT '',
+  primary_dataset TEXT NOT NULL DEFAULT '',
+  miniAOD_dataset TEXT NOT NULL DEFAULT '',
+  ntuple_path TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'not_started',
+  validation_status TEXT NOT NULL DEFAULT 'not_started'
+);
+
+CREATE TABLE IF NOT EXISTS background_estimates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  background TEXT NOT NULL,
+  era TEXT NOT NULL,
+  component TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT '',
+  value REAL,
+  uncertainty REAL,
+  status TEXT NOT NULL DEFAULT 'not_started'
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_type TEXT NOT NULL DEFAULT '',
+  label TEXT NOT NULL DEFAULT '',
+  path TEXT NOT NULL UNIQUE,
+  collected_at TEXT NOT NULL DEFAULT '',
+  imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  host TEXT NOT NULL DEFAULT '',
+  username TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  summary_json TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TRIGGER IF NOT EXISTS tasks_updated_at
+AFTER UPDATE ON tasks
+FOR EACH ROW
+BEGIN
+  UPDATE tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+END;
