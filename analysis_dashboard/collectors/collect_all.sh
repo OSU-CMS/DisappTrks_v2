@@ -24,7 +24,20 @@ if [[ "${DASHBOARD_ENSURE_PROXY:-0}" == "1" ]]; then
 fi
 
 python3 "${SCRIPT_DIR}/collect_environment.py" --output-dir "${SNAPSHOT_DIR}"
-python3 "${SCRIPT_DIR}/collect_condor_status.py" \
-  --output-dir "${SNAPSHOT_DIR}" \
-  --include-history \
+
+condor_args=(
+  --output-dir "${SNAPSHOT_DIR}"
+  --include-history
   --history-limit "${DASHBOARD_CONDOR_HISTORY_LIMIT:-200}"
+)
+
+if [[ -n "${DASHBOARD_CONDOR_SCHEDDS:-}" ]]; then
+  IFS=',' read -r -a condor_schedds <<< "${DASHBOARD_CONDOR_SCHEDDS}"
+  for schedd in "${condor_schedds[@]}"; do
+    if [[ -n "${schedd}" ]]; then
+      condor_args+=(--schedd "${schedd}")
+    fi
+  done
+fi
+
+python3 "${SCRIPT_DIR}/collect_condor_status.py" "${condor_args[@]}"

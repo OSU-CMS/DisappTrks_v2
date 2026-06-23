@@ -118,10 +118,12 @@ DASHBOARD_PROXY_VALID=192:00
 ```
 
 HTCondor collection includes the active queue and the 200 most recent history
-records by default. Adjust the history depth in `sync_snapshots.conf`:
+records per configured schedd by default. Adjust the history depth and LPC
+schedd list in `sync_snapshots.conf`:
 
 ```bash
 DASHBOARD_CONDOR_HISTORY_LIMIT=500
+DASHBOARD_CONDOR_SCHEDDS=lpcschedd4.fnal.gov,lpcschedd5.fnal.gov,lpcschedd6.fnal.gov
 ```
 
 ## Layout

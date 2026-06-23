@@ -96,14 +96,15 @@ def _render_summary(summary: dict[str, Any]) -> None:
 
 
 def _render_filters(df: pd.DataFrame) -> pd.DataFrame:
-    filter_cols = st.columns(4)
+    filter_cols = st.columns(5)
     view = filter_cols[0].selectbox(
         "View",
         ["All", "Active", "Completed", "Failed", "Held", "Long Running", "Memory Issues"],
     )
     sources = filter_cols[1].multiselect("Source", sorted(_unique_strings(df, "source")))
-    statuses = filter_cols[2].multiselect("Status", sorted(_unique_strings(df, "status")))
-    owners = filter_cols[3].multiselect("Owner", sorted(_unique_strings(df, "owner")))
+    schedds = filter_cols[2].multiselect("Schedd", sorted(_unique_strings(df, "schedd")))
+    statuses = filter_cols[3].multiselect("Status", sorted(_unique_strings(df, "status")))
+    owners = filter_cols[4].multiselect("Owner", sorted(_unique_strings(df, "owner")))
 
     filtered = df
     if view == "Active":
@@ -121,6 +122,8 @@ def _render_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     if sources:
         filtered = filtered[filtered["source"].isin(sources)]
+    if schedds:
+        filtered = filtered[filtered["schedd"].isin(schedds)]
     if statuses:
         filtered = filtered[filtered["status"].isin(statuses)]
     if owners:
@@ -132,6 +135,7 @@ def _render_filters(df: pd.DataFrame) -> pd.DataFrame:
 def _display_columns(df: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "source",
+        "schedd",
         "job_id",
         "task_name",
         "status",

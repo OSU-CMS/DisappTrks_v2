@@ -41,7 +41,7 @@ def main() -> None:
     else:
         query = _run_json_command(["condor_q", "-json"])
         if query["ok"]:
-            records.extend(_normalize_jobs(query["records"], source="queue"))
+            records.extend(_normalize_jobs(query["records"], source="queue", schedd=""))
         else:
             status = "failed"
             errors.append(str(query["error"]))
@@ -51,15 +51,27 @@ def main() -> None:
             errors.append("condor_history is not available on PATH.")
             if status == "ok":
                 status = "warning"
+        elif not args.schedds:
+            errors.append("History collection requires at least one --schedd value on this HTCondor pool.")
+            if status == "ok":
+                status = "warning"
         else:
-            history_args = ["condor_history", "-json", "-limit", str(args.history_limit)]
-            history = _run_json_command(history_args)
-            if history["ok"]:
-                records.extend(_normalize_jobs(history["records"], source="history"))
-            else:
-                errors.append(str(history["error"]))
-                if status == "ok":
-                    status = "warning"
+            for schedd in args.schedds:
+                history_args = [
+                    "condor_history",
+                    "-name",
+                    schedd,
+                    "-json",
+                    "-limit",
+                    str(args.history_limit),
+                ]
+                history = _run_json_command(history_args)
+                if history["ok"]:
+                    records.extend(_normalize_jobs(history["records"], source="history", schedd=schedd))
+                else:
+                    errors.append(str(history["error"]))
+                    if status == "ok":
+                        status = "warning"
 
     summary = _summarize(records)
     summary["errors"] = errors
@@ -99,7 +111,14 @@ def parse_args() -> argparse.Namespace:
         "--history-limit",
         type=int,
         default=200,
-        help="Maximum number of condor_history records to collect.",
+        help="Maximum number of condor_history records to collect per schedd.",
+    )
+    parser.add_argument(
+        "--schedd",
+        dest="schedds",
+        action="append",
+        default=[],
+        help="Schedd hostname to query for history. May be specified more than once.",
     )
     return parser.parse_args()
 
@@ -133,7 +152,7 @@ def _run_json_command(command: list[str]) -> dict[str, Any]:
     return {"ok": True, "records": records, "error": ""}
 
 
-def _normalize_jobs(records: list[object], source: str) -> list[dict[str, Any]]:
+def _normalize_jobs(records: list[object], source: str, schedd: str) -> list[dict[str, Any]]:
     normalized = []
     for record in records:
         if not isinstance(record, dict):
@@ -158,6 +177,7 @@ def _normalize_jobs(records: list[object], source: str) -> list[dict[str, Any]]:
         normalized.append(
             {
                 "source": source,
+                "schedd": schedd or _schedd_name(record),
                 "cluster_id": cluster_id,
                 "proc_id": proc_id,
                 "job_id": _job_id(cluster_id, proc_id),
@@ -185,6 +205,7 @@ def _normalize_jobs(records: list[object], source: str) -> list[dict[str, Any]]:
 def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     status_counts: dict[str, int] = {}
     source_counts: dict[str, int] = {}
+    schedd_counts: dict[str, int] = {}
     failed = 0
     completed = 0
     held = 0
@@ -194,8 +215,10 @@ def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     for record in records:
         status = str(record.get("status") or "unknown")
         source = str(record.get("source") or "unknown")
+        schedd = str(record.get("schedd") or "unknown")
         status_counts[status] = status_counts.get(status, 0) + 1
         source_counts[source] = source_counts.get(source, 0) + 1
+        schedd_counts[schedd] = schedd_counts.get(schedd, 0) + 1
 
         if bool(record.get("failed")):
             failed += 1
@@ -215,6 +238,7 @@ def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
         "completed_jobs": completed,
         "status_counts": status_counts,
         "source_counts": source_counts,
+        "schedd_counts": schedd_counts,
         "failed_jobs": failed,
         "held_jobs": held,
         "long_running_jobs": long_running,
@@ -227,6 +251,18 @@ def _task_name(record: dict[str, Any]) -> str:
         value = record.get(key)
         if value:
             return str(value)
+    return ""
+
+
+def _schedd_name(record: dict[str, Any]) -> str:
+    for key in ("ScheddName", "RemoteScheddName"):
+        value = record.get(key)
+        if value:
+            return str(value)
+
+    global_job_id = str(record.get("GlobalJobId") or "")
+    if "#" in global_job_id:
+        return global_job_id.split("#", 1)[0]
     return ""
 
 
