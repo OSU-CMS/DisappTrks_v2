@@ -35,6 +35,18 @@ case "$DATASET" in
     EXTRA_ARGS+=(--apply-2022-efg-water-leak-veto)
     ;;
 esac
+if [[ -n "${ELECTRON_FIDUCIAL_MAP:-}" ]]; then
+  EXTRA_ARGS+=(--electron-fiducial-map "$ELECTRON_FIDUCIAL_MAP")
+fi
+if [[ -n "${MUON_FIDUCIAL_MAP:-}" ]]; then
+  EXTRA_ARGS+=(--muon-fiducial-map "$MUON_FIDUCIAL_MAP")
+fi
+if [[ -n "${FIDUCIAL_THRESHOLD:-}" ]]; then
+  EXTRA_ARGS+=(--fiducial-threshold "$FIDUCIAL_THRESHOLD")
+fi
+if [[ -n "${MIN_FIDUCIAL_DELTA_R:-}" ]]; then
+  EXTRA_ARGS+=(--min-fiducial-delta-r "$MIN_FIDUCIAL_DELTA_R")
+fi
 
 printf 'Using filelist: %s\nFiles:\n' "$FILELIST"
 printf '  %s\n' "${FILES[@]}"

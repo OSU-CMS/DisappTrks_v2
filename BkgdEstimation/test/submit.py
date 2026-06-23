@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 
+from validate_jec_config import DEFAULT_CONFIG, validate_jec_config
+
 try:
     import tomllib  # Python 3.11+
 except ImportError:
@@ -23,6 +25,23 @@ except ImportError:
 def base_year(year):
     """Strip Pre/Post suffix: '2023Pre' -> '2023', '2022Post' -> '2022'"""
     return year.replace("Pre", "").replace("Post", "")
+
+
+def jec_year_key(year, era):
+    """Map a dataset year/era to the key used by JecConfigAK4.json."""
+    year = str(year)
+    era = str(era).upper()
+    if year == "2022":
+        return "2022Pre" if era in ("C", "D") else "2022Post"
+    if year == "2023":
+        return "2023Pre" if era == "C" else "2023Post"
+    if year.startswith("2024"):
+        return "2024"
+    if year.startswith("2025"):
+        return "2025"
+    raise RuntimeError(f"No JEC mapping for dataset year={year!r}, era={era!r}")
+
+
 # ── Trigger map ───────────────────────────────────────────────────────────────
 TRIGGERS = {
    "Muon":   "SingleMuon",
@@ -245,6 +264,26 @@ def main():
     if not entries:
         print("No datasets matched the given filters.")
         return
+
+    jec_years = list(dict.fromkeys(
+        jec_year_key(entry["year"], entry["era"])
+        for entry in entries
+    ))
+    print(
+        f"Running JEC preflight for: {', '.join(jec_years)}",
+        flush=True,
+    )
+    jec_errors = validate_jec_config(
+        DEFAULT_CONFIG,
+        years=jec_years,
+        mode="data",
+    )
+    if jec_errors:
+        print("ERROR: JEC preflight failed; no CRAB jobs were submitted.", file=sys.stderr)
+        for error in jec_errors:
+            print(f"\n{error}", file=sys.stderr)
+        sys.exit(1)
+    print("JEC preflight passed.\n", flush=True)
 
     print(f"{'DRY RUN — ' if args.dry_run else ''}Submitting {len(entries)} jobs:\n")
 

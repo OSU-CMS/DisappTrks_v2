@@ -18,9 +18,11 @@ DISPLAY_LAYER = {
     "combinedBins": r"combined",
 }
 
+CHANNELS = ("muon", "electron")
+
 # Force the cutflow table to follow the order in which cuts are applied.
 # Rows that are absent in a particular JSON are skipped.
-CUTFLOW_ORDER = [
+MUON_CUTFLOW_ORDER = [
     "event passes SingleMuon triggers",
     ">= 1 muons pT > 26 GeV",
     ">= 1 muons |eta| < 2.1",
@@ -49,6 +51,40 @@ CUTFLOW_ORDER = [
     "= 1 track-muon pairs qtrack * qmuon < 0",
     # Layer row is handled by prefix match below because the exact name contains the layer.
 ]
+
+ELECTRON_CUTFLOW_ORDER = [
+    "event passes SingleElectron/EGamma triggers",
+    ">= 1 electrons pT > 35 GeV",
+    ">= 1 electrons |eta| < 2.1",
+    ">= 1 electrons passing tight electron ID",
+    "exactly one passing electron chosen randomly",
+    ">= 1 tracks pT > 30 GeV",
+    ">= 1 tracks |eta| < 2.1",
+    ">= 1 tracks |eta| < 0.15 OR |eta| > 0.35",
+    ">= 1 tracks |eta| < 1.42 OR |eta| > 1.65",
+    ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85",
+    ">= 1 tracks eta < 0 OR eta > 1.42 OR phi < 2.7",
+    ">= 1 tracks |dz| > 0.5 cm OR |lambda| > 1e-3",
+    ">= 1 tracks number of pixel hits >= 4",
+    ">= 1 tracks missing inner hits = 0",
+    ">= 1 tracks missing middle hits = 0",
+    ">= 1 tracks rel. PF-based iso. < 0.05",
+    ">= 1 tracks |dxy| < 0.02 cm",
+    ">= 1 tracks |dz| < 0.5 cm",
+    ">= 1 track-jet pairs DeltaRtrack,jet > 0.5",
+    ">= 1 track-electron pairs Mtrack,electron > 10 GeV",
+    ">= 1 tracks min DeltaRtrack,muon > 0.15",
+    ">= 1 tracks min DeltaRtrack,had. tau > 0.15",
+    "exactly one passing track chosen randomly",
+    "= 1 track-electron pairs |Mtrack,electron - MZ| < 10 GeV",
+    "= 1 track-electron pairs qtrack * qelectron < 0",
+    # Layer row is handled by prefix match below because the exact name contains the layer.
+]
+
+CUTFLOW_ORDER_BY_CHANNEL = {
+    "muon": MUON_CUTFLOW_ORDER,
+    "electron": ELECTRON_CUTFLOW_ORDER,
+}
 
 LATEX_LABELS = {
     "event passes SingleMuon triggers":
@@ -103,6 +139,26 @@ LATEX_LABELS = {
         r"$\geq 1$ track--muon pair with $|M_{\mathrm{track},\mu}-M_{Z}|<10~\mathrm{GeV}$",
     "= 1 track-muon pairs qtrack * qmuon < 0":
         r"$\geq 1$ track--muon pair with $q_{\mathrm{track}}q_{\mu}<0$",
+    "event passes SingleElectron/EGamma triggers":
+        r"Event passes SingleElectron/EGamma triggers",
+    ">= 1 electrons pT > 35 GeV":
+        r"$\geq 1$ electron with $p_{\mathrm{T}}>35~\mathrm{GeV}$",
+    ">= 1 electrons |eta| < 2.1":
+        r"$\geq 1$ electron with $|\eta|<2.1$",
+    ">= 1 electrons passing tight electron ID":
+        r"$\geq 1$ electron passing tight electron ID",
+    "exactly one passing electron chosen randomly":
+        r"Exactly one passing electron chosen randomly",
+    ">= 1 tracks eta < 0 OR eta > 1.42 OR phi < 2.7":
+        r"$\geq 1$ track passing the 2022 water-leak veto",
+    ">= 1 track-electron pairs Mtrack,electron > 10 GeV":
+        r"$\geq 1$ track--electron pair with $M_{\mathrm{track},e}>10~\mathrm{GeV}$",
+    ">= 1 tracks min DeltaRtrack,muon > 0.15":
+        r"$\geq 1$ track with $\min\Delta R(\mathrm{track},\mu)>0.15$",
+    "= 1 track-electron pairs |Mtrack,electron - MZ| < 10 GeV":
+        r"$\geq 1$ track--electron pair with $|M_{\mathrm{track},e}-M_{Z}|<10~\mathrm{GeV}$",
+    "= 1 track-electron pairs qtrack * qelectron < 0":
+        r"$\geq 1$ track--electron pair with $q_{\mathrm{track}}q_{e}<0$",
 }
 
 
@@ -226,11 +282,11 @@ def merge_payloads(payloads: list[dict]):
     return merged
 
 
-def ordered_cut_names(cutflow: OrderedDict) -> list[str]:
+def ordered_cut_names(cutflow: OrderedDict, channel: str) -> list[str]:
     names: list[str] = []
     seen = set()
 
-    for cut in CUTFLOW_ORDER:
+    for cut in CUTFLOW_ORDER_BY_CHANNEL[channel]:
         if cut in cutflow and cut not in seen:
             names.append(cut)
             seen.add(cut)
@@ -250,16 +306,22 @@ def ordered_cut_names(cutflow: OrderedDict) -> list[str]:
     return names
 
 
-def write_cutflow_latex(merged: dict, path: Path, layer: str, include_table_env: bool = False):
+def write_cutflow_latex(
+    merged: dict,
+    path: Path,
+    layer: str,
+    channel: str,
+    include_table_env: bool = False,
+):
     cutflow = merged[layer]["cutflow"]
-    names = ordered_cut_names(cutflow)
+    names = ordered_cut_names(cutflow, channel)
 
     with open(path, "w") as out:
         if include_table_env:
             out.write(r"\begin{table}[htbp]" + "\n")
             out.write(r"\centering" + "\n")
-            out.write(r"\caption{Muon tag-and-probe cutflow.}" + "\n")
-            out.write(r"\label{tab:muon_tp_cutflow}" + "\n")
+            out.write(rf"\caption{{{channel.capitalize()} tag-and-probe cutflow.}}" + "\n")
+            out.write(rf"\label{{tab:{channel}_tp_cutflow}}" + "\n")
 
         out.write(r"\begin{tabular}{lrrr}" + "\n")
         out.write(r"\hline" + "\n")
@@ -285,13 +347,18 @@ def write_cutflow_latex(merged: dict, path: Path, layer: str, include_table_env:
             out.write(r"\end{table}" + "\n")
 
 
-def write_pveto_latex(merged: dict, path: Path, include_table_env: bool = False):
+def write_pveto_latex(
+    merged: dict,
+    path: Path,
+    channel: str,
+    include_table_env: bool = False,
+):
     with open(path, "w") as out:
         if include_table_env:
             out.write(r"\begin{table}[htbp]" + "\n")
             out.write(r"\centering" + "\n")
-            out.write(r"\caption{Muon veto probabilities.}" + "\n")
-            out.write(r"\label{tab:muon_pveto}" + "\n")
+            out.write(rf"\caption{{{channel.capitalize()} veto probabilities.}}" + "\n")
+            out.write(rf"\label{{tab:{channel}_pveto}}" + "\n")
 
         out.write(r"\begin{tabular}{lrrrrr}" + "\n")
         out.write(r"\hline" + "\n")
@@ -343,9 +410,15 @@ def write_merged_json(merged: dict, path: Path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Merge per-job muon Pveto JSON outputs and make LaTeX tables."
+        description="Merge per-job lepton Pveto JSON outputs and make LaTeX tables."
     )
     parser.add_argument("json_files", nargs="+", help="Per-job JSON files or glob patterns.")
+    parser.add_argument(
+        "--channel",
+        choices=CHANNELS,
+        default="muon",
+        help="Lepton channel used for cutflow ordering, labels, and table captions.",
+    )
     parser.add_argument("--cutflow-tex", default="cutflow_table.tex")
     parser.add_argument("--pveto-tex", default="pveto_table.tex")
     parser.add_argument("--cutflow-layer", default="combinedBins", choices=LAYERS)
@@ -361,8 +434,14 @@ def main():
     merged = merge_payloads(payloads)
 
     write_merged_json(merged, Path(args.merged_json))
-    write_cutflow_latex(merged, Path(args.cutflow_tex), args.cutflow_layer, args.table_env)
-    write_pveto_latex(merged, Path(args.pveto_tex), args.table_env)
+    write_cutflow_latex(
+        merged,
+        Path(args.cutflow_tex),
+        args.cutflow_layer,
+        args.channel,
+        args.table_env,
+    )
+    write_pveto_latex(merged, Path(args.pveto_tex), args.channel, args.table_env)
 
     print(f"Merged {len(payloads)} JSON files")
     print(f"Wrote {args.merged_json}")
