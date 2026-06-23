@@ -5,6 +5,8 @@ electron_fiducial_map =
 muon_fiducial_map =
 fiducial_threshold = 2.0
 min_fiducial_delta_r = 0.05
+n_jobs = 1
+extra_transfer_input_files =
 
 arguments = $(ProcId) 2023_D
 environment = "ELECTRON_FIDUCIAL_MAP=$(electron_fiducial_map) MUON_FIDUCIAL_MAP=$(muon_fiducial_map) FIDUCIAL_THRESHOLD=$(fiducial_threshold) MIN_FIDUCIAL_DELTA_R=$(min_fiducial_delta_r)"
@@ -21,6 +23,6 @@ should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 
 transfer_output_files = analysis_output
-transfer_input_files = MuonBackground_v2_table16_pveto_json_pairfix_taujet.py,fiducial_map_tools.py,runtime_warnings.py,filelists,helper_functions.py,python_env
+transfer_input_files = MuonBackground_v2_table16_pveto_json_pairfix_taujet.py,fiducial_map_tools.py,runtime_warnings.py,filelists,helper_functions.py,python_env$(extra_transfer_input_files)
 
-queue $(queue)
+queue $(n_jobs)

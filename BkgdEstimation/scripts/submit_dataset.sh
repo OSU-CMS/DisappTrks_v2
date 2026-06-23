@@ -57,14 +57,29 @@ if [[ -n "$MUON_FIDUCIAL_MAP_ARG" && ! -f "$MUON_FIDUCIAL_MAP_ARG" ]]; then
   exit 1
 fi
 
+ELECTRON_FIDUCIAL_MAP_JOB=""
+MUON_FIDUCIAL_MAP_JOB=""
+EXTRA_TRANSFER_INPUT_FILES=""
+
+if [[ -n "$ELECTRON_FIDUCIAL_MAP_ARG" ]]; then
+  ELECTRON_FIDUCIAL_MAP_JOB=$(basename "$ELECTRON_FIDUCIAL_MAP_ARG")
+  EXTRA_TRANSFER_INPUT_FILES="${EXTRA_TRANSFER_INPUT_FILES},${ELECTRON_FIDUCIAL_MAP_ARG}"
+fi
+
+if [[ -n "$MUON_FIDUCIAL_MAP_ARG" ]]; then
+  MUON_FIDUCIAL_MAP_JOB=$(basename "$MUON_FIDUCIAL_MAP_ARG")
+  EXTRA_TRANSFER_INPUT_FILES="${EXTRA_TRANSFER_INPUT_FILES},${MUON_FIDUCIAL_MAP_ARG}"
+fi
+
 mkdir -p "logs/${DATASET}"
 
 SUBMIT_ARGS=(
   -append "n_jobs = ${NJOBS}"
-  -append "electron_fiducial_map = ${ELECTRON_FIDUCIAL_MAP_ARG}"
-  -append "muon_fiducial_map = ${MUON_FIDUCIAL_MAP_ARG}"
+  -append "electron_fiducial_map = ${ELECTRON_FIDUCIAL_MAP_JOB}"
+  -append "muon_fiducial_map = ${MUON_FIDUCIAL_MAP_JOB}"
   -append "fiducial_threshold = ${FIDUCIAL_THRESHOLD_ARG}"
   -append "min_fiducial_delta_r = ${MIN_FIDUCIAL_DELTA_R_ARG}"
+  -append "extra_transfer_input_files = ${EXTRA_TRANSFER_INPUT_FILES}"
 )
 
 if "$IS_ELECTRON"; then
