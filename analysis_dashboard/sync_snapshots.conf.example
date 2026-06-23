@@ -1,0 +1,10 @@
+# Copy this file to sync_snapshots.conf and update the values for your account.
+# Environment variables passed to sync_snapshots.sh take precedence.
+
+REMOTE_HOST="${REMOTE_HOST:-cmslpc-el9.fnal.gov}"
+REMOTE_DIR="${REMOTE_DIR:-/path/on/lpc/to/DisappTrks_v2/analysis_dashboard}"
+REMOTE_COLLECT="${REMOTE_COLLECT:-1}"
+
+DASHBOARD_ENSURE_PROXY="${DASHBOARD_ENSURE_PROXY:-0}"
+DASHBOARD_PROXY_MIN_VALID="${DASHBOARD_PROXY_MIN_VALID:-4:00}"
+DASHBOARD_PROXY_VALID="${DASHBOARD_PROXY_VALID:-192:00}"

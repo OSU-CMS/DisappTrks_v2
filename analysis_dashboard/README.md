@@ -71,12 +71,17 @@ the Data Sources page. A snapshot should use this shape:
 
 ## LPC Snapshot Sync
 
-For automated collection, copy this dashboard directory to LPC and run the local
-sync wrapper from your laptop or desktop:
+For automated collection, copy the example configuration and set the LPC host
+and dashboard path once:
 
 ```bash
-REMOTE_HOST=cmslpc \
-REMOTE_DIR=~/DisappTrks_v2/analysis_dashboard \
+cp sync_snapshots.conf.example sync_snapshots.conf
+```
+
+The local `sync_snapshots.conf` file is ignored by git. After updating it, run
+the sync wrapper from your laptop or desktop:
+
+```bash
 ./sync_snapshots.sh
 ```
 
@@ -89,6 +94,14 @@ bash collectors/collect_all.sh
 and then copies JSON files back into the local `snapshots/` directory with
 `rsync`. The initial collectors write environment and HTCondor snapshots so the
 SSH/Kerberos and copy workflow can be tested before adding CRAB and EOS commands.
+SSH runs with X11 forwarding disabled for this non-interactive workflow.
+
+Command-line environment variables override the saved configuration when a
+one-off change is needed:
+
+```bash
+REMOTE_COLLECT=0 ./sync_snapshots.sh
+```
 
 If you want the LPC collector wrapper to renew a CMS proxy when less than four
 hours remain during remote sync, run:

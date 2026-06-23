@@ -1,6 +1,7 @@
 data/*.sqlite
 data/*.sqlite-*
 snapshots/*.json
+sync_snapshots.conf
 .streamlit/
 .venv/
 __pycache__/
