@@ -717,8 +717,18 @@ def main():
     parser.add_argument("--chunk-size", default="100 MB", help="uproot iterate step_size.")
     parser.add_argument("--output-dir", default=".", help="Directory for fiducial-map ROOT payloads.")
     parser.add_argument("--tag", required=True, help="Output tag, e.g. 2024G_data.")
-    parser.add_argument("--eta-bins", type=int, default=84)
-    parser.add_argument("--phi-bins", type=int, default=64)
+    parser.add_argument(
+        "--eta-bins",
+        type=int,
+        default=42,
+        help="Number of eta bins. Default gives 0.1-wide bins over |eta| < 2.1, matching the AN.",
+    )
+    parser.add_argument(
+        "--phi-bins",
+        type=int,
+        default=64,
+        help="Number of phi bins. Default gives bins close to 0.1 over -pi < phi < pi, matching the AN.",
+    )
     parser.add_argument("--threshold", type=float, default=2.0, help="Hot-spot threshold in sigma for the JSON summary.")
     parser.add_argument("--jet-pt-min", type=float, default=30.0)
     parser.add_argument("--jet-eta-max", type=float, default=4.5)
@@ -726,7 +736,12 @@ def main():
     parser.add_argument("--plot-dir", help="Optional directory for before/after, inefficiency, and hot-spot plots.")
     parser.add_argument("--cms-label", default="CMS Preliminary", help="CMS label drawn at the upper left of fiducial-map plots.")
     parser.add_argument("--lumi-label", default="13.6 TeV", help="Luminosity/energy label drawn at the upper right of fiducial-map plots.")
-    parser.add_argument("--hot-spot-radius", type=float, default=0.06, help="Radius of hot-spot circles in eta-phi plots.")
+    parser.add_argument(
+        "--hot-spot-radius",
+        type=float,
+        default=None,
+        help="Radius of hot-spot circles in eta-phi plots. Default uses the bin half-diagonal from the AN.",
+    )
     parser.add_argument("--json-output", help="Optional JSON summary of the calculated maps.")
 
     args = parser.parse_args()

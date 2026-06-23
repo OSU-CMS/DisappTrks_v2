@@ -4,8 +4,12 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 cd "$SCRIPT_DIR"
 
-DATASET=${1:?Usage: submit_dataset.sh DATASET [muon|electron]}
+DATASET=${1:?Usage: submit_dataset.sh DATASET [muon|electron] [electron_fiducial_map] [muon_fiducial_map]}
 FLAVOR=${2:-muon}
+ELECTRON_FIDUCIAL_MAP_ARG=${3:-${ELECTRON_FIDUCIAL_MAP:-}}
+MUON_FIDUCIAL_MAP_ARG=${4:-${MUON_FIDUCIAL_MAP:-}}
+FIDUCIAL_THRESHOLD_ARG=${FIDUCIAL_THRESHOLD:-2.0}
+MIN_FIDUCIAL_DELTA_R_ARG=${MIN_FIDUCIAL_DELTA_R:-0.05}
 FILES_PER_JOB=5
 
 case "$FLAVOR" in
@@ -43,13 +47,36 @@ if [[ "$NJOBS" -eq 0 ]]; then
   exit 1
 fi
 
+if [[ -n "$ELECTRON_FIDUCIAL_MAP_ARG" && ! -f "$ELECTRON_FIDUCIAL_MAP_ARG" ]]; then
+  echo "Missing electron fiducial map: $ELECTRON_FIDUCIAL_MAP_ARG" >&2
+  exit 1
+fi
+
+if [[ -n "$MUON_FIDUCIAL_MAP_ARG" && ! -f "$MUON_FIDUCIAL_MAP_ARG" ]]; then
+  echo "Missing muon fiducial map: $MUON_FIDUCIAL_MAP_ARG" >&2
+  exit 1
+fi
+
 mkdir -p "logs/${DATASET}"
 
+SUBMIT_ARGS=(
+  -append "n_jobs = ${NJOBS}"
+  -append "electron_fiducial_map = ${ELECTRON_FIDUCIAL_MAP_ARG}"
+  -append "muon_fiducial_map = ${MUON_FIDUCIAL_MAP_ARG}"
+  -append "fiducial_threshold = ${FIDUCIAL_THRESHOLD_ARG}"
+  -append "min_fiducial_delta_r = ${MIN_FIDUCIAL_DELTA_R_ARG}"
+)
+
 if "$IS_ELECTRON"; then
-  SUBMIT_ARGS=("$JDL" "dataset=${DATASET}" "queue=${NJOBS}")
-else
-  SUBMIT_ARGS=("$JDL" "queue=${NJOBS}")
+  SUBMIT_ARGS+=(-append "dataset = ${DATASET}")
 fi
 
 echo "Submitting ${NJOBS} ${FLAVOR} jobs for ${DATASET}"
-condor_submit "${SUBMIT_ARGS[@]}"
+if [[ -n "$ELECTRON_FIDUCIAL_MAP_ARG" || -n "$MUON_FIDUCIAL_MAP_ARG" ]]; then
+  echo "Using fiducial maps:"
+  echo "  electron: ${ELECTRON_FIDUCIAL_MAP_ARG:-none}"
+  echo "  muon:     ${MUON_FIDUCIAL_MAP_ARG:-none}"
+  echo "  threshold: ${FIDUCIAL_THRESHOLD_ARG}"
+  echo "  min dR:    ${MIN_FIDUCIAL_DELTA_R_ARG}"
+fi
+condor_submit "${SUBMIT_ARGS[@]}" "$JDL"

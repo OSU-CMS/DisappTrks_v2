@@ -1,7 +1,13 @@
 universe = vanilla
 executable = run_job.sh
 
+electron_fiducial_map =
+muon_fiducial_map =
+fiducial_threshold = 2.0
+min_fiducial_delta_r = 0.05
+
 arguments = $(ProcId)
+environment = "ELECTRON_FIDUCIAL_MAP=$(electron_fiducial_map) MUON_FIDUCIAL_MAP=$(muon_fiducial_map) FIDUCIAL_THRESHOLD=$(fiducial_threshold) MIN_FIDUCIAL_DELTA_R=$(min_fiducial_delta_r)"
 
 output = logs/job_Muons_2023D_Pveto_NewCode_$(ProcId).out
 error  = logs/job_Muons_2023D_Pveto_NewCode_$(ProcId).err

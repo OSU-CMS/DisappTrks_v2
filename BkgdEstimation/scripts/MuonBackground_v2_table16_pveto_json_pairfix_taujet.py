@@ -231,7 +231,13 @@ def build_track_vectors(arrays, mask, fiducial_mask=None):
     }, with_name="Momentum4D")
 
 
-def make_tp_cutflow(arrays, layer):
+def make_tp_cutflow(
+    arrays,
+    layer,
+    electron_fiducial_map=None,
+    muon_fiducial_map=None,
+    min_fiducial_delta_r=0.05,
+):
     """
     Cutflow with labels matched to Table 16 as closely as possible.
 
@@ -287,6 +293,15 @@ def make_tp_cutflow(arrays, layer):
 
     trk = trk & ((np.abs(arrays["trk_eta"]) < 1.55) | (np.abs(arrays["trk_eta"]) > 1.85))
     add(">= 1 tracks |eta| < 1.55 OR |eta| > 1.85", ak.any(trk, axis=1))
+
+    if electron_fiducial_map is not None or muon_fiducial_map is not None:
+        trk = trk & combined_fiducial_map_mask(
+            arrays,
+            electron_fiducial_map,
+            muon_fiducial_map,
+            min_fiducial_delta_r,
+        )
+        add(">= 1 tracks passing lepton fiducial-map veto", ak.any(trk, axis=1))
 
     trk = trk & (
         (np.abs(arrays["trk_dz"]) > 0.5)
@@ -487,7 +502,13 @@ def process_file_set(
             step_size=chunk_size,
             library="ak",
         ):
-            cutflow = make_tp_cutflow(arrays, layer)
+            cutflow = make_tp_cutflow(
+                arrays,
+                layer,
+                electron_fiducial_map,
+                muon_fiducial_map,
+                min_fiducial_delta_r,
+            )
 
             for name, val in cutflow.items():
                 cutflow_totals[name] = cutflow_totals.get(name, 0) + val
@@ -708,7 +729,7 @@ def main():
         "--min-fiducial-delta-r",
         type=float,
         default=0.05,
-        help="Minimum DeltaR used around fiducial-map hot-spot bin centers.",
+        help="Minimum DeltaR used around fiducial-map hot-spot bin centers; the actual veto radius is max(this, bin half-diagonal).",
     )
 
     args = parser.parse_args()

@@ -34,6 +34,7 @@ MUON_CUTFLOW_ORDER = [
     ">= 1 tracks |eta| < 0.15 OR |eta| > 0.35",
     ">= 1 tracks |eta| < 1.42 OR |eta| > 1.65",
     ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85",
+    ">= 1 tracks passing lepton fiducial-map veto",
     ">= 1 tracks |dz| > 0.5 cm OR |lambda| > 1e-3",
     ">= 1 tracks number of pixel hits >= 4",
     ">= 1 tracks missing inner hits = 0",
@@ -64,6 +65,7 @@ ELECTRON_CUTFLOW_ORDER = [
     ">= 1 tracks |eta| < 1.42 OR |eta| > 1.65",
     ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85",
     ">= 1 tracks eta < 0 OR eta > 1.42 OR phi < 2.7",
+    ">= 1 tracks passing lepton fiducial-map veto",
     ">= 1 tracks |dz| > 0.5 cm OR |lambda| > 1e-3",
     ">= 1 tracks number of pixel hits >= 4",
     ">= 1 tracks missing inner hits = 0",
@@ -109,6 +111,8 @@ LATEX_LABELS = {
         r"$\geq 1$ track with $|\eta|<1.42$ or $|\eta|>1.65$",
     ">= 1 tracks |eta| < 1.55 OR |eta| > 1.85":
         r"$\geq 1$ track with $|\eta|<1.55$ or $|\eta|>1.85$",
+    ">= 1 tracks passing lepton fiducial-map veto":
+        r"$\geq 1$ track passing the lepton fiducial-map veto",
     ">= 1 tracks |dz| > 0.5 cm OR |lambda| > 1e-3":
         r"$\geq 1$ track with $|d_z|>0.5~\mathrm{cm}$ or $|\lambda|>10^{-3}$",
     ">= 1 tracks number of pixel hits >= 4":

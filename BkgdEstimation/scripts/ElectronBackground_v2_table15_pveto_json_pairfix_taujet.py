@@ -256,6 +256,9 @@ def make_tp_cutflow(
     jet_pt_min,
     jet_eta_max,
     apply_water_leak_veto,
+    electron_fiducial_map=None,
+    muon_fiducial_map=None,
+    min_fiducial_delta_r=0.05,
 ):
     cutflow = OrderedDict()
     event_mask = ak.ones_like(arrays["metNoMu_pt"], dtype=bool)
@@ -301,6 +304,15 @@ def make_tp_cutflow(
             ">= 1 tracks eta < 0 OR eta > 1.42 OR phi < 2.7",
             ak.any(trk, axis=1),
         )
+
+    if electron_fiducial_map is not None or muon_fiducial_map is not None:
+        trk = trk & combined_fiducial_map_mask(
+            arrays,
+            electron_fiducial_map,
+            muon_fiducial_map,
+            min_fiducial_delta_r,
+        )
+        add(">= 1 tracks passing lepton fiducial-map veto", ak.any(trk, axis=1))
 
     trk = trk & (
         (np.abs(arrays["trk_dz"]) > 0.5)
@@ -504,6 +516,9 @@ def process_file_set(
                 jet_pt_min,
                 jet_eta_max,
                 apply_water_leak_veto,
+                electron_fiducial_map,
+                muon_fiducial_map,
+                min_fiducial_delta_r,
             )
 
             for name, val in cutflow.items():
@@ -761,7 +776,7 @@ def main():
         "--min-fiducial-delta-r",
         type=float,
         default=0.05,
-        help="Minimum DeltaR used around fiducial-map hot-spot bin centers.",
+        help="Minimum DeltaR used around fiducial-map hot-spot bin centers; the actual veto radius is max(this, bin half-diagonal).",
     )
 
     args = parser.parse_args()
