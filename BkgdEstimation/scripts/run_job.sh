@@ -25,10 +25,25 @@ echo "Using filelist: $FILELIST"
 echo "Files:"
 echo "$FILES"
 
+EXTRA_ARGS=()
+if [[ -n "${ELECTRON_FIDUCIAL_MAP:-}" ]]; then
+  EXTRA_ARGS+=(--electron-fiducial-map "$ELECTRON_FIDUCIAL_MAP")
+fi
+if [[ -n "${MUON_FIDUCIAL_MAP:-}" ]]; then
+  EXTRA_ARGS+=(--muon-fiducial-map "$MUON_FIDUCIAL_MAP")
+fi
+if [[ -n "${FIDUCIAL_THRESHOLD:-}" ]]; then
+  EXTRA_ARGS+=(--fiducial-threshold "$FIDUCIAL_THRESHOLD")
+fi
+if [[ -n "${MIN_FIDUCIAL_DELTA_R:-}" ]]; then
+  EXTRA_ARGS+=(--min-fiducial-delta-r "$MIN_FIDUCIAL_DELTA_R")
+fi
+
 python3 MuonBackground_v2_table16_pveto_json_pairfix_taujet.py \
   --single-muon $FILES \
   --layers all \
   --output "${OUTDIR}/Muon_${DATASET}_Pveto_${JOBID}.root" \
-  --json-output "${OUTDIR}/Muon_${DATASET}_Pveto_${JOBID}.json"
+  --json-output "${OUTDIR}/Muon_${DATASET}_Pveto_${JOBID}.json" \
+  "${EXTRA_ARGS[@]}"
 
 echo "Done job ${JOBID} for ${DATASET}"

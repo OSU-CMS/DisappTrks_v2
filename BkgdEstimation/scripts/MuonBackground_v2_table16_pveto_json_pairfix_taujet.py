@@ -11,10 +11,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from runtime_warnings import filter_known_runtime_warnings
+
+filter_known_runtime_warnings()
+
 import awkward as ak
 import numpy as np
 import uproot
 import vector
+
+from fiducial_map_tools import combined_fiducial_map_mask, load_fiducial_map
 
 vector.register_awkward()
 
@@ -128,6 +134,14 @@ def fiducial_eta_mask(arrays):
     )
 
 
+def good_jet_mask(arrays):
+    return (
+        (arrays["jet_pt"] > 30)
+        & (np.abs(arrays["jet_eta"]) < 4.5)
+        & arrays["jet_isTightLepVeto"]
+    )
+
+
 def muon_tag_mask(arrays):
     # Input ntuple is assumed to already be SingleMuon-triggered.
     mask = arrays["muon_isTrigMatched"]
@@ -167,11 +181,7 @@ def probe_track_denominator_mask(arrays, layer):
 
     # Table 16 track-jet and lepton-veto rows.
     # Keep the muon veto OUT of the denominator; it is the Pveto numerator split.
-    good_jet = (
-        (arrays["jet_pt"] > 30)
-        & (np.abs(arrays["jet_eta"]) < 4.5)
-        & arrays["jet_isTightLepVeto"]
-    )
+    good_jet = good_jet_mask(arrays)
     good_ele = (
         (arrays["ele_pt"] > 10.0)
         & (np.abs(arrays["ele_eta"]) < 2.5)
@@ -204,8 +214,10 @@ def build_muon_vectors(arrays, mask):
     }, with_name="Momentum4D")
 
 
-def build_track_vectors(arrays, mask):
+def build_track_vectors(arrays, mask, fiducial_mask=None):
     muon_veto = min_delta_r_mask(arrays, "muon", 0.15)
+    if fiducial_mask is None:
+        fiducial_mask = ak.ones_like(arrays["trk_eta"], dtype=bool)
 
     return ak.zip({
         "pt": arrays["trk_pt"][mask],
@@ -215,6 +227,7 @@ def build_track_vectors(arrays, mask):
         "charge": arrays["trk_charge"][mask],
         "missingOuterHits": arrays["trk_missingOuterHits"][mask],
         "passesMuonVeto": muon_veto[mask],
+        "passesFiducialMaps": fiducial_mask[mask],
     }, with_name="Momentum4D")
 
 
@@ -299,11 +312,7 @@ def make_tp_cutflow(arrays, layer):
 
     trk = trk & (np.abs(arrays["trk_dz"]) < 0.5)
     add(">= 1 tracks |dz| < 0.5 cm", ak.any(trk, axis=1))
-    #good_jet = (
-    #    (arrays["jet_pt"] > 120)
-    #    & (np.abs(arrays["jet_eta"]) < 2.4)
-    #    & arrays["jet_isTightLepVeto"]
-    #)
+    good_jet = good_jet_mask(arrays)
     trk = trk & min_delta_r_mask(arrays, "jet", 0.5, obj_mask=good_jet)
     add(">= 1 track-jet pairs DeltaRtrack,jet > 0.5", ak.any(trk, axis=1))
 
@@ -348,12 +357,24 @@ def make_tp_cutflow(arrays, layer):
     return cutflow
 
 
-def count_pveto_pairs(arrays, layer):
+def count_pveto_pairs(
+    arrays,
+    layer,
+    electron_fiducial_map=None,
+    muon_fiducial_map=None,
+    min_fiducial_delta_r=0.05,
+):
     mu = muon_tag_mask(arrays)
     trk = probe_track_denominator_mask(arrays, layer)
+    fiducial_mask = combined_fiducial_map_mask(
+        arrays,
+        electron_fiducial_map,
+        muon_fiducial_map,
+        min_fiducial_delta_r,
+    )
 
     muons = build_muon_vectors(arrays, mu)
-    tracks = build_track_vectors(arrays, trk)
+    tracks = build_track_vectors(arrays, trk, fiducial_mask)
 
     trk_obj, mu_obj = ak.unzip(ak.cartesian([tracks, muons], nested=True))
 
@@ -371,7 +392,8 @@ def count_pveto_pairs(arrays, layer):
     # This is deliberately NOT part of the denominator.
     passes_muon_veto = trk_obj.passesMuonVeto
     passes_missing_outer = trk_obj.missingOuterHits >= 3
-    passes_veto = passes_muon_veto & passes_missing_outer
+    passes_fiducial_maps = trk_obj.passesFiducialMaps
+    passes_veto = passes_muon_veto & passes_missing_outer & passes_fiducial_maps
 
  # ============================================
     # DEBUG
@@ -403,7 +425,15 @@ def count_pveto_pairs(arrays, layer):
     }
 
 
-def process_file_set(files, tree_name, layer, chunk_size):
+def process_file_set(
+    files,
+    tree_name,
+    layer,
+    chunk_size,
+    electron_fiducial_map=None,
+    muon_fiducial_map=None,
+    min_fiducial_delta_r=0.05,
+):
     cutflow_totals = OrderedDict()
 
     counts = {
@@ -462,7 +492,13 @@ def process_file_set(files, tree_name, layer, chunk_size):
             for name, val in cutflow.items():
                 cutflow_totals[name] = cutflow_totals.get(name, 0) + val
 
-            pveto = count_pveto_pairs(arrays, layer)
+            pveto = count_pveto_pairs(
+                arrays,
+                layer,
+                electron_fiducial_map,
+                muon_fiducial_map,
+                min_fiducial_delta_r,
+            )
 
             for key, value in pveto.items():
                 counts[key].add_poisson(value)
@@ -514,6 +550,16 @@ def run(args):
     )
 
     all_results = {}
+    electron_fiducial_map = (
+        load_fiducial_map(args.electron_fiducial_map, threshold=args.fiducial_threshold)
+        if args.electron_fiducial_map
+        else None
+    )
+    muon_fiducial_map = (
+        load_fiducial_map(args.muon_fiducial_map, threshold=args.fiducial_threshold)
+        if args.muon_fiducial_map
+        else None
+    )
 
     for layer in layers:
         print()
@@ -526,6 +572,9 @@ def run(args):
             args.tree,
             layer,
             args.chunk_size,
+            electron_fiducial_map,
+            muon_fiducial_map,
+            args.min_fiducial_delta_r,
         )
 
         all_results[layer] = {
@@ -547,6 +596,12 @@ def run(args):
         payload = {
             "input_files": files,
             "tree": args.tree,
+            "fiducial_maps": {
+                "electron": args.electron_fiducial_map,
+                "muon": args.muon_fiducial_map,
+                "threshold": args.fiducial_threshold,
+                "min_delta_r": args.min_fiducial_delta_r,
+            },
             "layers": {},
         }
 
@@ -630,6 +685,30 @@ def main():
     parser.add_argument(
         "--json-output",
         help="Optional per-job JSON output with cutflow and Pveto counts.",
+    )
+
+    parser.add_argument(
+        "--electron-fiducial-map",
+        help="Optional electron fiducial-map ROOT payload with beforeVeto/afterVeto histograms.",
+    )
+
+    parser.add_argument(
+        "--muon-fiducial-map",
+        help="Optional muon fiducial-map ROOT payload with beforeVeto/afterVeto histograms.",
+    )
+
+    parser.add_argument(
+        "--fiducial-threshold",
+        type=float,
+        default=2.0,
+        help="Hot-spot threshold in sigma used when reading fiducial-map payloads.",
+    )
+
+    parser.add_argument(
+        "--min-fiducial-delta-r",
+        type=float,
+        default=0.05,
+        help="Minimum DeltaR used around fiducial-map hot-spot bin centers.",
     )
 
     args = parser.parse_args()
