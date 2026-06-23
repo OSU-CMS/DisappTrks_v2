@@ -117,6 +117,13 @@ DASHBOARD_PROXY_MIN_VALID=4:00
 DASHBOARD_PROXY_VALID=192:00
 ```
 
+HTCondor collection includes the active queue and the 200 most recent history
+records by default. Adjust the history depth in `sync_snapshots.conf`:
+
+```bash
+DASHBOARD_CONDOR_HISTORY_LIMIT=500
+```
+
 ## Layout
 
 ```text
@@ -124,6 +131,7 @@ analysis_dashboard/
   app.py
   collectors/
     collect_all.sh
+    collect_condor_status.py
     collect_environment.py
   dashboard/
     config.py

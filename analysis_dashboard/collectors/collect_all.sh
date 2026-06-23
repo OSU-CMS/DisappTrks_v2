@@ -24,4 +24,7 @@ if [[ "${DASHBOARD_ENSURE_PROXY:-0}" == "1" ]]; then
 fi
 
 python3 "${SCRIPT_DIR}/collect_environment.py" --output-dir "${SNAPSHOT_DIR}"
-python3 "${SCRIPT_DIR}/collect_condor_status.py" --output-dir "${SNAPSHOT_DIR}"
+python3 "${SCRIPT_DIR}/collect_condor_status.py" \
+  --output-dir "${SNAPSHOT_DIR}" \
+  --include-history \
+  --history-limit "${DASHBOARD_CONDOR_HISTORY_LIMIT:-200}"

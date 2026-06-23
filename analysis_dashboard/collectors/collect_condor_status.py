@@ -143,7 +143,17 @@ def _normalize_jobs(records: list[object], source: str) -> list[dict[str, Any]]:
         proc_id = record.get("ProcId")
         job_status = _as_int(record.get("JobStatus"))
         request_memory = _as_float(record.get("RequestMemory"))
-        memory_usage = _as_float(record.get("MemoryUsage") or record.get("ResidentSetSize_RAW"))
+        memory_usage = _memory_usage_mb(record)
+        runtime_sec = _runtime_seconds(record)
+        exit_code = record.get("ExitCode", "")
+        exit_by_signal = bool(record.get("ExitBySignal", False))
+        status_name = JOB_STATUS_NAMES.get(
+            job_status,
+            f"unknown_{job_status}" if job_status is not None else "unknown",
+        )
+        failed = _is_failed(status_name, exit_code, exit_by_signal)
+        long_running = runtime_sec is not None and runtime_sec > 24 * 3600
+        memory_issue = _memory_exceeds_request_values(memory_usage, request_memory)
 
         normalized.append(
             {
@@ -152,15 +162,21 @@ def _normalize_jobs(records: list[object], source: str) -> list[dict[str, Any]]:
                 "proc_id": proc_id,
                 "job_id": _job_id(cluster_id, proc_id),
                 "task_name": _task_name(record),
-                "status": JOB_STATUS_NAMES.get(job_status, f"unknown_{job_status}" if job_status is not None else "unknown"),
+                "status": status_name,
                 "status_code": job_status,
                 "owner": record.get("Owner", ""),
-                "runtime_sec": _runtime_seconds(record),
+                "runtime_sec": runtime_sec,
                 "request_memory_mb": request_memory,
                 "memory_usage_mb": memory_usage,
-                "exit_code": record.get("ExitCode", ""),
+                "exit_code": exit_code,
+                "exit_by_signal": exit_by_signal,
+                "exit_signal": record.get("ExitSignal", ""),
                 "hold_reason": record.get("HoldReason", ""),
                 "submit_host": record.get("SubmitHost", ""),
+                "completed_at": record.get("CompletionDate", ""),
+                "failed": failed,
+                "long_running": long_running,
+                "memory_issue": memory_issue,
             }
         )
     return normalized
@@ -170,6 +186,8 @@ def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     status_counts: dict[str, int] = {}
     source_counts: dict[str, int] = {}
     failed = 0
+    completed = 0
+    held = 0
     long_running = 0
     memory_issues = 0
 
@@ -179,19 +197,26 @@ def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
         status_counts[status] = status_counts.get(status, 0) + 1
         source_counts[source] = source_counts.get(source, 0) + 1
 
-        exit_code = record.get("exit_code")
-        if exit_code not in ("", None, 0):
+        if bool(record.get("failed")):
             failed += 1
-        if _as_float(record.get("runtime_sec")) and float(record["runtime_sec"]) > 24 * 3600:
+        if status == "completed" and not bool(record.get("failed")):
+            completed += 1
+        if status == "held":
+            held += 1
+        if bool(record.get("long_running")):
             long_running += 1
-        if _memory_exceeds_request(record):
+        if bool(record.get("memory_issue")):
             memory_issues += 1
 
     return {
         "jobs": len(records),
+        "active_jobs": source_counts.get("queue", 0),
+        "history_jobs": source_counts.get("history", 0),
+        "completed_jobs": completed,
         "status_counts": status_counts,
         "source_counts": source_counts,
         "failed_jobs": failed,
+        "held_jobs": held,
         "long_running_jobs": long_running,
         "memory_issues": memory_issues,
     }
@@ -216,10 +241,26 @@ def _runtime_seconds(record: dict[str, Any]) -> int | None:
     return max(0, round(datetime.now(timezone.utc).timestamp() - entered_current_status))
 
 
-def _memory_exceeds_request(record: dict[str, Any]) -> bool:
-    used = _as_float(record.get("memory_usage_mb"))
-    requested = _as_float(record.get("request_memory_mb"))
+def _memory_exceeds_request_values(used: float | None, requested: float | None) -> bool:
     return used is not None and requested is not None and used > requested
+
+
+def _memory_usage_mb(record: dict[str, Any]) -> float | None:
+    memory_usage = _as_float(record.get("MemoryUsage"))
+    if memory_usage is not None:
+        return memory_usage
+
+    resident_set_size_kib = _as_float(record.get("ResidentSetSize_RAW"))
+    if resident_set_size_kib is None:
+        return None
+    return resident_set_size_kib / 1024
+
+
+def _is_failed(status: str, exit_code: object, exit_by_signal: bool) -> bool:
+    if status == "removed" or exit_by_signal:
+        return True
+    parsed_exit_code = _as_int(exit_code)
+    return parsed_exit_code is not None and parsed_exit_code != 0
 
 
 def _job_id(cluster_id: object, proc_id: object) -> str:
