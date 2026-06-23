@@ -6,6 +6,7 @@ import argparse
 import getpass
 import json
 import platform
+import shlex
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -104,8 +105,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def _run_json_command(command: list[str]) -> dict[str, Any]:
+    command_text = " ".join(shlex.quote(part) for part in command)
     try:
-        result = subprocess.run(command, check=False, capture_output=True, text=True)
+        result = subprocess.run(["bash", "-lc", command_text], check=False, capture_output=True, text=True)
     except OSError as error:
         return {"ok": False, "records": [], "error": str(error)}
 
@@ -114,7 +116,7 @@ def _run_json_command(command: list[str]) -> dict[str, Any]:
         return {
             "ok": False,
             "records": [],
-            "error": f"{' '.join(command)} exited with {result.returncode}: {stderr}",
+            "error": f"{command_text} exited with {result.returncode}: {stderr}",
         }
 
     if not result.stdout.strip():
@@ -123,10 +125,10 @@ def _run_json_command(command: list[str]) -> dict[str, Any]:
     try:
         records = json.loads(result.stdout)
     except json.JSONDecodeError as error:
-        return {"ok": False, "records": [], "error": f"Could not parse JSON from {' '.join(command)}: {error}"}
+        return {"ok": False, "records": [], "error": f"Could not parse JSON from {command_text}: {error}"}
 
     if not isinstance(records, list):
-        return {"ok": False, "records": [], "error": f"{' '.join(command)} did not return a JSON list."}
+        return {"ok": False, "records": [], "error": f"{command_text} did not return a JSON list."}
 
     return {"ok": True, "records": records, "error": ""}
 
