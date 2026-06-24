@@ -41,3 +41,26 @@ if [[ -n "${DASHBOARD_CONDOR_SCHEDDS:-}" ]]; then
 fi
 
 python3 "${SCRIPT_DIR}/collect_condor_status.py" "${condor_args[@]}"
+
+crab_args=(--output-dir "${SNAPSHOT_DIR}")
+crab_task_globs="${DASHBOARD_CRAB_TASK_GLOBS:-${APP_DIR}/../BkgdEstimation/test/crab_projects/*/*/crab_*}"
+IFS=',' read -r -a crab_globs <<< "${crab_task_globs}"
+for task_glob in "${crab_globs[@]}"; do
+  if [[ -n "${task_glob}" ]]; then
+    crab_args+=(--task-glob "${task_glob}")
+  fi
+done
+python3 "${SCRIPT_DIR}/collect_crab_status.py" "${crab_args[@]}"
+
+eos_args=(
+  --output-dir "${SNAPSHOT_DIR}"
+  --endpoint "${DASHBOARD_EOS_ENDPOINT:-root://cmseosmgm01.fnal.gov}"
+)
+eos_roots="${DASHBOARD_EOS_ROOTS:-/store/group/lpclonglived/DisappTrks,/store/group/lpcdisapptrks/ntuplizer,/store/group/lpcdisapptrks/custom_nanoaod}"
+IFS=',' read -r -a configured_eos_roots <<< "${eos_roots}"
+for eos_root in "${configured_eos_roots[@]}"; do
+  if [[ -n "${eos_root}" ]]; then
+    eos_args+=(--root "${eos_root}")
+  fi
+done
+python3 "${SCRIPT_DIR}/collect_eos_outputs.py" "${eos_args[@]}"

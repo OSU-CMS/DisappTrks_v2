@@ -10,10 +10,12 @@ This first milestone is intentionally small:
 - dataset tracking page
 - data-source snapshot registry for local development with LPC-collected inputs
 - snapshot-backed HTCondor monitoring page
+- snapshot-backed CRAB task monitoring page
+- EOS ROOT output inventory page
 - idempotent seed button for standard Run 3 analysis tasks
 
-Future milestones can add CRAB, EOS, ROOT validation, plot review,
-and unblinding readiness checks.
+Future milestones can add ROOT validation, plot review, and unblinding
+readiness checks.
 
 ## Run Locally
 
@@ -126,6 +128,35 @@ DASHBOARD_CONDOR_HISTORY_LIMIT=500
 DASHBOARD_CONDOR_SCHEDDS=lpcschedd4.fnal.gov,lpcschedd5.fnal.gov,lpcschedd6.fnal.gov
 ```
 
+CRAB tasks are discovered by default under:
+
+```text
+DisappTrks_v2/BkgdEstimation/test/crab_projects/*/*/crab_*
+```
+
+Override the discovery globs with a comma-separated value when additional CRAB
+work areas need to be monitored:
+
+```bash
+DASHBOARD_CRAB_TASK_GLOBS=/path/to/workarea/crab_*,/path/to/another/crab_*
+```
+
+EOS inventory defaults to:
+
+```text
+/store/group/lpclonglived/DisappTrks
+/store/group/lpcdisapptrks/ntuplizer
+/store/group/lpcdisapptrks/custom_nanoaod
+```
+
+The `custom_nanoaod` directory is reserved for future production. Until it is
+created, the EOS Outputs page reports it as `not_created`. Configure roots with:
+
+```bash
+DASHBOARD_EOS_ENDPOINT=root://cmseosmgm01.fnal.gov
+DASHBOARD_EOS_ROOTS=/store/path/one,/store/path/two
+```
+
 ## Layout
 
 ```text
@@ -134,7 +165,9 @@ analysis_dashboard/
   collectors/
     collect_all.sh
     collect_condor_status.py
+    collect_crab_status.py
     collect_environment.py
+    collect_eos_outputs.py
   dashboard/
     config.py
     db.py
@@ -143,7 +176,9 @@ analysis_dashboard/
     schema.sql
     pages/
       condor.py
+      crab.py
       datasets.py
+      eos.py
       overview.py
       snapshots.py
       tasks.py

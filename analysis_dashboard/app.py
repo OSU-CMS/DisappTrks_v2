@@ -6,7 +6,9 @@ import streamlit as st
 
 from dashboard.db import initialize_database
 from dashboard.pages.condor import render_condor_page
+from dashboard.pages.crab import render_crab_page
 from dashboard.pages.datasets import render_datasets_page
+from dashboard.pages.eos import render_eos_page
 from dashboard.pages.overview import render_overview_page
 from dashboard.pages.snapshots import render_snapshots_page
 from dashboard.pages.tasks import render_tasks_page
@@ -30,6 +32,8 @@ def main() -> None:
             "Dataset Tracking",
             "Data Sources",
             "HTCondor Monitoring",
+            "CRAB Monitoring",
+            "EOS Outputs",
         ],
     )
 
@@ -43,6 +47,10 @@ def main() -> None:
         render_snapshots_page()
     elif page == "HTCondor Monitoring":
         render_condor_page()
+    elif page == "CRAB Monitoring":
+        render_crab_page()
+    elif page == "EOS Outputs":
+        render_eos_page()
 
 
 if __name__ == "__main__":
