@@ -37,7 +37,14 @@ submit_one() {
   fi
 
   echo "Submitting ${njobs} ${flavor} fiducial-map jobs for ${DATASET}"
-  condor_submit submit_fiducial_maps.jdl "dataset=${DATASET}" "flavor=${flavor}" "tag=${TAG}" "files_per_job=${FILES_PER_JOB}" "layers=${FIDUCIAL_LAYERS}" "queue=${njobs}"
+  condor_submit \
+    -append "dataset = ${DATASET}" \
+    -append "flavor = ${flavor}" \
+    -append "tag = ${TAG}" \
+    -append "files_per_job = ${FILES_PER_JOB}" \
+    -append "layers = ${FIDUCIAL_LAYERS}" \
+    -append "n_jobs = ${njobs}" \
+    submit_fiducial_maps.jdl
 
   cat <<EOF
 

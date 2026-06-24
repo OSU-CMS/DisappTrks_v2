@@ -1,6 +1,13 @@
 universe = vanilla
 executable = run_fiducial_map_job.sh
 
+dataset =
+flavor =
+tag =
+files_per_job = 5
+layers = combinedBins
+n_jobs = 1
+
 arguments = $(ProcId) $(dataset) $(flavor) $(tag)
 environment = "FILES_PER_JOB=$(files_per_job) FIDUCIAL_LAYERS=$(layers)"
 
@@ -18,4 +25,4 @@ when_to_transfer_output = ON_EXIT
 transfer_output_files = analysis_output_fiducial
 transfer_input_files = make_fiducial_maps_v2.py,fiducial_map_tools.py,runtime_warnings.py,ElectronBackground_v2_table15_pveto_json_pairfix_taujet.py,MuonBackground_v2_table16_pveto_json_pairfix_taujet.py,filelists,python_env
 
-queue $(queue)
+queue $(n_jobs)
