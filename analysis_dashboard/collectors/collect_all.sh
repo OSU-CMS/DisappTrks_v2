@@ -52,11 +52,25 @@ for task_glob in "${crab_globs[@]}"; do
 done
 python3 "${SCRIPT_DIR}/collect_crab_status.py" "${crab_args[@]}"
 
+completeness_args=(
+  --output-dir "${SNAPSHOT_DIR}"
+  --crab-snapshot "${SNAPSHOT_DIR}/crab_latest.json"
+  --endpoint "${DASHBOARD_EOS_ENDPOINT:-root://cmseosmgm01.fnal.gov}"
+)
+mapping_scripts="${DASHBOARD_OUTPUT_MAPPING_SCRIPTS:-${APP_DIR}/../BkgdEstimation/scripts/make_muon_filelist.py,${APP_DIR}/../BkgdEstimation/scripts/make_electron_filelist.py}"
+IFS=',' read -r -a configured_mapping_scripts <<< "${mapping_scripts}"
+for mapping_script in "${configured_mapping_scripts[@]}"; do
+  if [[ -n "${mapping_script}" ]]; then
+    completeness_args+=(--mapping-script "${mapping_script}")
+  fi
+done
+python3 "${SCRIPT_DIR}/collect_output_completeness.py" "${completeness_args[@]}"
+
 eos_args=(
   --output-dir "${SNAPSHOT_DIR}"
   --endpoint "${DASHBOARD_EOS_ENDPOINT:-root://cmseosmgm01.fnal.gov}"
 )
-eos_roots="${DASHBOARD_EOS_ROOTS:-/store/group/lpclonglived/DisappTrks,/store/group/lpcdisapptrks/ntuplizer,/store/group/lpcdisapptrks/custom_nanoaod}"
+eos_roots="${DASHBOARD_EOS_ROOTS:-/store/group/lpcdisapptrks/ntuplizer,/store/group/lpcdisapptrks/nano/dev,/store/group/lpcdisapptrks/nano/prod,/store/group/lpcdisapptrks/nano/sample}"
 IFS=',' read -r -a configured_eos_roots <<< "${eos_roots}"
 for eos_root in "${configured_eos_roots[@]}"; do
   if [[ -n "${eos_root}" ]]; then

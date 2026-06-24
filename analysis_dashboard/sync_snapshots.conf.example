@@ -12,6 +12,7 @@ DASHBOARD_CONDOR_HISTORY_LIMIT="${DASHBOARD_CONDOR_HISTORY_LIMIT:-200}"
 DASHBOARD_CONDOR_SCHEDDS="${DASHBOARD_CONDOR_SCHEDDS:-lpcschedd4.fnal.gov,lpcschedd5.fnal.gov,lpcschedd6.fnal.gov}"
 
 DASHBOARD_CRAB_TASK_GLOBS="${DASHBOARD_CRAB_TASK_GLOBS:-}"
+DASHBOARD_OUTPUT_MAPPING_SCRIPTS="${DASHBOARD_OUTPUT_MAPPING_SCRIPTS:-}"
 
 DASHBOARD_EOS_ENDPOINT="${DASHBOARD_EOS_ENDPOINT:-root://cmseosmgm01.fnal.gov}"
-DASHBOARD_EOS_ROOTS="${DASHBOARD_EOS_ROOTS:-/store/group/lpclonglived/DisappTrks,/store/group/lpcdisapptrks/ntuplizer,/store/group/lpcdisapptrks/custom_nanoaod}"
+DASHBOARD_EOS_ROOTS="${DASHBOARD_EOS_ROOTS:-/store/group/lpcdisapptrks/ntuplizer,/store/group/lpcdisapptrks/nano/dev,/store/group/lpcdisapptrks/nano/prod,/store/group/lpcdisapptrks/nano/sample}"

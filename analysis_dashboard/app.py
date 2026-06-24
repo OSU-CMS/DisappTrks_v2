@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from dashboard.db import initialize_database
+from dashboard.pages.completeness import render_completeness_page
 from dashboard.pages.condor import render_condor_page
 from dashboard.pages.crab import render_crab_page
 from dashboard.pages.datasets import render_datasets_page
@@ -34,6 +35,7 @@ def main() -> None:
             "HTCondor Monitoring",
             "CRAB Monitoring",
             "EOS Outputs",
+            "Output Completeness",
         ],
     )
 
@@ -51,6 +53,8 @@ def main() -> None:
         render_crab_page()
     elif page == "EOS Outputs":
         render_eos_page()
+    elif page == "Output Completeness":
+        render_completeness_page()
 
 
 if __name__ == "__main__":

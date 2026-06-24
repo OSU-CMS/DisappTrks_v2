@@ -12,6 +12,7 @@ This first milestone is intentionally small:
 - snapshot-backed HTCondor monitoring page
 - snapshot-backed CRAB task monitoring page
 - EOS ROOT output inventory page
+- CRAB-to-EOS output completeness checks for mapped muon and electron tasks
 - idempotent seed button for standard Run 3 analysis tasks
 
 Future milestones can add ROOT validation, plot review, and unblinding
@@ -141,16 +142,35 @@ work areas need to be monitored:
 DASHBOARD_CRAB_TASK_GLOBS=/path/to/workarea/crab_*,/path/to/another/crab_*
 ```
 
+Output completeness reuses the `DATASETS` and `BASE` definitions in:
+
+```text
+BkgdEstimation/scripts/make_muon_filelist.py
+BkgdEstimation/scripts/make_electron_filelist.py
+```
+
+For each mapped task, the collector compares the CRAB `total_jobs` value with
+unique EOS filenames matching `ntuple_<job_id>.root`. It reports missing job
+IDs, duplicate files across production attempts, unexpected IDs, and tasks that
+have CRAB failures despite complete EOS output. Override the mapping scripts
+with:
+
+```bash
+DASHBOARD_OUTPUT_MAPPING_SCRIPTS=/path/to/mapping_one.py,/path/to/mapping_two.py
+```
+
 EOS inventory defaults to:
 
 ```text
-/store/group/lpclonglived/DisappTrks
 /store/group/lpcdisapptrks/ntuplizer
-/store/group/lpcdisapptrks/custom_nanoaod
+/store/group/lpcdisapptrks/nano/dev
+/store/group/lpcdisapptrks/nano/prod
+/store/group/lpcdisapptrks/nano/sample
 ```
 
-The `custom_nanoaod` directory is reserved for future production. Until it is
-created, the EOS Outputs page reports it as `not_created`. Configure roots with:
+The broad `/store/group/lpclonglived/DisappTrks` area is intentionally not
+scanned recursively. Outputs there should be monitored through explicit
+task-to-directory mappings. Configure inventory roots with:
 
 ```bash
 DASHBOARD_EOS_ENDPOINT=root://cmseosmgm01.fnal.gov
@@ -168,6 +188,7 @@ analysis_dashboard/
     collect_crab_status.py
     collect_environment.py
     collect_eos_outputs.py
+    collect_output_completeness.py
   dashboard/
     config.py
     db.py
@@ -176,6 +197,7 @@ analysis_dashboard/
     schema.sql
     pages/
       condor.py
+      completeness.py
       crab.py
       datasets.py
       eos.py
