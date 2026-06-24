@@ -17,6 +17,8 @@ import numpy as np
 import uproot
 
 from ElectronBackground_v2_table15_pveto_json_pairfix_taujet import (
+    Z_MASS,
+    build_electron_vectors,
     build_track_vectors as build_electron_probe_tracks,
     electron_tag_mask,
     probe_track_denominator_mask as electron_probe_track_denominator_mask,
@@ -39,9 +41,9 @@ def parse_inputs(items: Iterable[str] | None) -> list[str]:
     return files
 
 
-def histogram_axes(eta_bins, phi_bins):
-    eta_edges = np.linspace(-2.1, 2.1, eta_bins + 1)
-    phi_edges = np.linspace(-np.pi, np.pi, phi_bins + 1)
+def histogram_axes(eta_bins, phi_bins, eta_min, eta_max, phi_min, phi_max):
+    eta_edges = np.linspace(eta_min, eta_max, eta_bins + 1)
+    phi_edges = np.linspace(phi_min, phi_max, phi_bins + 1)
     return eta_edges, phi_edges
 
 
@@ -66,9 +68,7 @@ def selected_electron_tracks(
     jet_eta_max,
     apply_water_leak_veto,
 ):
-    # Require a tag electron so the fiducial map is measured in the same
-    # tag-and-probe phase space used by the Pveto calculation.
-    event_has_tag = ak.any(electron_tag_mask(arrays), axis=1)
+    electrons = build_electron_vectors(arrays, electron_tag_mask(arrays))
     denominator = electron_probe_track_denominator_mask(
         arrays,
         layer,
@@ -76,15 +76,28 @@ def selected_electron_tracks(
         jet_eta_max,
         apply_water_leak_veto,
     )
-    denominator = denominator & event_has_tag
-
     tracks = build_electron_probe_tracks(arrays, denominator)
-    passes_veto = (
-        tracks.passesElectronDR
-        & (tracks.calo < 10.0)
-        & (tracks.missingOuterHits >= 3)
+    track_pairs, electron_pairs = ak.unzip(
+        ak.cartesian([tracks, electrons], nested=True)
     )
-    return denominator, passes_veto
+
+    mass = (track_pairs + electron_pairs).mass
+    pair_denominator = (
+        (mass > Z_MASS - 10.0)
+        & (mass < Z_MASS + 10.0)
+        & (track_pairs.charge * electron_pairs.charge < 0)
+    )
+
+    before_eta = track_pairs.eta[pair_denominator]
+    before_phi = track_pairs.phi[pair_denominator]
+
+    # Match ElectronFiducialCalcAfter: the numerator differs from the
+    # denominator only by the veto-electron DeltaR requirement.
+    pair_numerator = pair_denominator & track_pairs.passesElectronDR
+    after_eta = track_pairs.eta[pair_numerator]
+    after_phi = track_pairs.phi[pair_numerator]
+
+    return before_eta, before_phi, after_eta, after_phi
 
 
 def selected_muon_tracks(arrays, layer):
@@ -160,7 +173,7 @@ def process_flavor(
             library="ak",
         ):
             if flavor == "electron":
-                denominator, after_mask = selected_electron_tracks(
+                before_eta, before_phi, after_eta, after_phi = selected_electron_tracks(
                     arrays,
                     layer,
                     jet_pt_min,
@@ -169,16 +182,18 @@ def process_flavor(
                 )
             else:
                 denominator, after_mask = selected_muon_tracks(arrays, layer)
+                before_eta = arrays["trk_eta"][denominator]
+                before_phi = arrays["trk_phi"][denominator]
+                after_eta = before_eta[after_mask]
+                after_phi = before_phi[after_mask]
 
-            eta = arrays["trk_eta"][denominator]
-            phi = arrays["trk_phi"][denominator]
             before_total = add_histograms(
                 before_total,
-                fill_histogram(eta, phi, eta_edges, phi_edges),
+                fill_histogram(before_eta, before_phi, eta_edges, phi_edges),
             )
             after_total = add_histograms(
                 after_total,
-                fill_histogram(eta[after_mask], phi[after_mask], eta_edges, phi_edges),
+                fill_histogram(after_eta, after_phi, eta_edges, phi_edges),
             )
 
     if before_total is None:
@@ -568,7 +583,14 @@ def summarize_map(path, threshold):
 
 
 def run(args):
-    eta_edges, phi_edges = histogram_axes(args.eta_bins, args.phi_bins)
+    eta_edges, phi_edges = histogram_axes(
+        args.eta_bins,
+        args.phi_bins,
+        args.eta_min,
+        args.eta_max,
+        args.phi_min,
+        args.phi_max,
+    )
     outputs = {}
 
     electron_files = parse_inputs(args.single_electron)
@@ -685,6 +707,8 @@ def run(args):
                     "layers": args.layers,
                     "eta_bins": args.eta_bins,
                     "phi_bins": args.phi_bins,
+                    "eta_range": [args.eta_min, args.eta_max],
+                    "phi_range": [args.phi_min, args.phi_max],
                     "threshold": args.threshold,
                     "jet_pt_min": args.jet_pt_min,
                     "jet_eta_max": args.jet_eta_max,
@@ -720,15 +744,19 @@ def main():
     parser.add_argument(
         "--eta-bins",
         type=int,
-        default=42,
-        help="Number of eta bins. Default gives 0.1-wide bins over |eta| < 2.1, matching the AN.",
+        default=60,
+        help="Number of eta bins. Default reproduces the legacy 0.1-wide binning.",
     )
     parser.add_argument(
         "--phi-bins",
         type=int,
         default=64,
-        help="Number of phi bins. Default gives bins close to 0.1 over -pi < phi < pi, matching the AN.",
+        help="Number of phi bins. Default reproduces the legacy 0.1-wide binning.",
     )
+    parser.add_argument("--eta-min", type=float, default=-3.0)
+    parser.add_argument("--eta-max", type=float, default=3.0)
+    parser.add_argument("--phi-min", type=float, default=-3.2)
+    parser.add_argument("--phi-max", type=float, default=3.2)
     parser.add_argument("--threshold", type=float, default=2.0, help="Hot-spot threshold in sigma for the JSON summary.")
     parser.add_argument("--jet-pt-min", type=float, default=30.0)
     parser.add_argument("--jet-eta-max", type=float, default=4.5)

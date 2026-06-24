@@ -123,6 +123,10 @@ def _run_command(command: list[str]) -> dict[str, Any]:
 
 def _parse_task_status(task_path: Path, result: dict[str, Any]) -> dict[str, Any]:
     output = "\n".join(part for part in [str(result["stdout"]), str(result["stderr"])] if part)
+    status_error = not bool(result["ok"]) or "CMSSW is missing" in output
+    error = str(result["error"])
+    if status_error and not error:
+        error = output
     counts = {
         label.lower(): int(count)
         for label, count, _total in JOB_COUNT_PATTERN.findall(output)
@@ -156,8 +160,8 @@ def _parse_task_status(task_path: Path, result: dict[str, Any]) -> dict[str, Any
         "held_jobs": counts.get("held", 0),
         "total_jobs": total_jobs,
         "complete": complete,
-        "status_error": not bool(result["ok"]),
-        "error": str(result["error"]),
+        "status_error": status_error,
+        "error": error,
         "status_output": output[-6000:],
     }
 

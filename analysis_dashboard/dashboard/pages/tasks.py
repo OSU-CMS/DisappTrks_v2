@@ -5,20 +5,29 @@ import streamlit as st
 
 from dashboard.config import ERAS, TASK_PRIORITIES, TASK_STATUSES
 from dashboard.db import execute, fetch_all
+from dashboard.production_tasks import sync_production_tasks
 from dashboard.seed import seed_standard_tasks
 
 
 def render_tasks_page() -> None:
     st.title("Analysis Tasks")
 
-    seed_cols = st.columns([1, 3])
+    seed_cols = st.columns([1, 1, 3])
     if seed_cols[0].button("Seed Run 3 Tasks"):
         inserted, skipped = seed_standard_tasks()
         st.success(f"Seeded {inserted} tasks. Skipped {skipped} existing tasks.")
         st.rerun()
-    seed_cols[1].caption(
+    if seed_cols[1].button("Sync Production Tasks"):
+        result = sync_production_tasks()
+        st.success(
+            f"Synced {result['total']} production tasks: "
+            f"{result['inserted']} added, {result['updated']} updated, "
+            f"{result['complete']} complete."
+        )
+        st.rerun()
+    seed_cols[2].caption(
         "Creates the standard era/background/component tasks from the dashboard roadmap. "
-        "Safe to run more than once."
+        "Production task status is derived from the latest CRAB-to-EOS completeness snapshot."
     )
 
     with st.expander("Add Task", expanded=True):
