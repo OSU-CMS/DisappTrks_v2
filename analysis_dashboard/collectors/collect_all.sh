@@ -42,7 +42,11 @@ fi
 
 python3 "${SCRIPT_DIR}/collect_condor_status.py" "${condor_args[@]}"
 
-crab_args=(--output-dir "${SNAPSHOT_DIR}")
+crab_args=(
+  --output-dir "${SNAPSHOT_DIR}"
+  --workers "${DASHBOARD_CRAB_WORKERS:-8}"
+  --timeout-sec "${DASHBOARD_CRAB_TIMEOUT_SEC:-120}"
+)
 crab_task_globs="${DASHBOARD_CRAB_TASK_GLOBS:-${APP_DIR}/../BkgdEstimation/test/crab_projects/*/*/crab_*}"
 IFS=',' read -r -a crab_globs <<< "${crab_task_globs}"
 for task_glob in "${crab_globs[@]}"; do

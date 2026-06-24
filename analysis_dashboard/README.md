@@ -142,6 +142,13 @@ work areas need to be monitored:
 DASHBOARD_CRAB_TASK_GLOBS=/path/to/workarea/crab_*,/path/to/another/crab_*
 ```
 
+CRAB status checks run concurrently and use a per-task timeout:
+
+```bash
+DASHBOARD_CRAB_WORKERS=8
+DASHBOARD_CRAB_TIMEOUT_SEC=120
+```
+
 Output completeness reuses the `DATASETS` and `BASE` definitions in:
 
 ```text
@@ -158,6 +165,13 @@ with:
 ```bash
 DASHBOARD_OUTPUT_MAPPING_SCRIPTS=/path/to/mapping_one.py,/path/to/mapping_two.py
 ```
+
+The Analysis Tasks page can synchronize these mapped productions into SQLite.
+The operation is idempotent: it adds missing tasks and updates status/progress
+for existing production tasks. Complete or extra-file results become complete;
+incomplete results use the observed-output fraction; unknown results wait for a
+valid CRAB job count. `sync_snapshots.sh` runs this task synchronization
+automatically after copying fresh snapshots.
 
 EOS inventory defaults to:
 

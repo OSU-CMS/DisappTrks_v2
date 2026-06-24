@@ -11,6 +11,7 @@ import re
 import shlex
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -39,14 +40,19 @@ def main() -> None:
         status = "skipped"
         errors.append("crab is not available on PATH.")
     else:
-        for task_path in task_paths:
-            result = _run_command(["crab", "status", "-d", str(task_path)])
-            record = _parse_task_status(task_path, result)
-            records.append(record)
-            if not result["ok"]:
-                errors.append(str(result["error"]))
-                if status == "ok":
-                    status = "warning"
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(_collect_task, task_path, args.timeout_sec): task_path
+                for task_path in task_paths
+            }
+            for future in as_completed(futures):
+                record = future.result()
+                records.append(record)
+                if record["status_error"]:
+                    errors.append(str(record["error"]))
+                    if status == "ok":
+                        status = "warning"
+        records.sort(key=lambda record: str(record["task_path"]))
 
     summary = _summarize(records, len(task_paths))
     summary["errors"] = errors
@@ -83,6 +89,18 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Glob used to discover CRAB project directories. May be repeated.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Maximum number of concurrent crab status commands.",
+    )
+    parser.add_argument(
+        "--timeout-sec",
+        type=int,
+        default=120,
+        help="Timeout for each crab status command.",
+    )
     return parser.parse_args()
 
 
@@ -96,7 +114,12 @@ def _discover_tasks(patterns: list[str]) -> list[Path]:
     return sorted(paths)
 
 
-def _run_command(command: list[str]) -> dict[str, Any]:
+def _collect_task(task_path: Path, timeout_sec: int) -> dict[str, Any]:
+    result = _run_command(["crab", "status", "-d", str(task_path)], timeout_sec)
+    return _parse_task_status(task_path, result)
+
+
+def _run_command(command: list[str], timeout_sec: int) -> dict[str, Any]:
     command_text = " ".join(shlex.quote(part) for part in command)
     try:
         result = subprocess.run(
@@ -104,7 +127,15 @@ def _run_command(command: list[str]) -> dict[str, Any]:
             check=False,
             capture_output=True,
             text=True,
+            timeout=timeout_sec,
         )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": "",
+            "error": f"{command_text} timed out after {timeout_sec} seconds",
+        }
     except OSError as error:
         return {"ok": False, "stdout": "", "stderr": "", "error": str(error)}
 
