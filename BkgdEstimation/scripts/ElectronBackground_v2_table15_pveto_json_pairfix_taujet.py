@@ -431,18 +431,43 @@ def count_pveto_pairs(
     passes_ecalo = trk_obj.calo < 10.0
     passes_missing_outer = trk_obj.missingOuterHits >= 3
     passes_fiducial_maps = trk_obj.passesFiducialMaps
-    passes_veto = (
-        passes_electron_dr
-        & passes_ecalo
-        & passes_missing_outer
-        & passes_fiducial_maps
-    )
+
+    after_electron_dr = passes_electron_dr
+    after_ecalo = after_electron_dr & passes_ecalo
+    after_missing_outer = after_ecalo & passes_missing_outer
+    passes_veto = after_missing_outer & passes_fiducial_maps
 
     return {
         "p_veto_den_os": float(ak.sum(z_window & os_pair)),
         "p_veto_den_ss": float(ak.sum(z_window & ss_pair)),
         "p_veto_num_os": float(ak.sum(z_window & os_pair & passes_veto)),
         "p_veto_num_ss": float(ak.sum(z_window & ss_pair & passes_veto)),
+        "p_veto_diag_z_window_os": float(ak.sum(z_window & os_pair)),
+        "p_veto_diag_z_window_ss": float(ak.sum(z_window & ss_pair)),
+        "p_veto_diag_after_electron_dr_os": float(
+            ak.sum(z_window & os_pair & after_electron_dr)
+        ),
+        "p_veto_diag_after_electron_dr_ss": float(
+            ak.sum(z_window & ss_pair & after_electron_dr)
+        ),
+        "p_veto_diag_after_ecalo_os": float(
+            ak.sum(z_window & os_pair & after_ecalo)
+        ),
+        "p_veto_diag_after_ecalo_ss": float(
+            ak.sum(z_window & ss_pair & after_ecalo)
+        ),
+        "p_veto_diag_after_missing_outer_os": float(
+            ak.sum(z_window & os_pair & after_missing_outer)
+        ),
+        "p_veto_diag_after_missing_outer_ss": float(
+            ak.sum(z_window & ss_pair & after_missing_outer)
+        ),
+        "p_veto_diag_after_fiducial_maps_os": float(
+            ak.sum(z_window & os_pair & passes_veto)
+        ),
+        "p_veto_diag_after_fiducial_maps_ss": float(
+            ak.sum(z_window & ss_pair & passes_veto)
+        ),
     }
 
 
@@ -460,12 +485,23 @@ def process_file_set(
 ):
     cutflow_totals = OrderedDict()
 
-    counts = {
-        "p_veto_num_os": Count(),
-        "p_veto_num_ss": Count(),
-        "p_veto_den_os": Count(),
-        "p_veto_den_ss": Count(),
-    }
+    count_names = (
+        "p_veto_num_os",
+        "p_veto_num_ss",
+        "p_veto_den_os",
+        "p_veto_den_ss",
+        "p_veto_diag_z_window_os",
+        "p_veto_diag_z_window_ss",
+        "p_veto_diag_after_electron_dr_os",
+        "p_veto_diag_after_electron_dr_ss",
+        "p_veto_diag_after_ecalo_os",
+        "p_veto_diag_after_ecalo_ss",
+        "p_veto_diag_after_missing_outer_os",
+        "p_veto_diag_after_missing_outer_ss",
+        "p_veto_diag_after_fiducial_maps_os",
+        "p_veto_diag_after_fiducial_maps_ss",
+    )
+    counts = {name: Count() for name in count_names}
 
     branches = [
         "metNoMu_pt",
