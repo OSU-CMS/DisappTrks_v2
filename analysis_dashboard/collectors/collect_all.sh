@@ -68,6 +68,13 @@ for mapping_script in "${configured_mapping_scripts[@]}"; do
     completeness_args+=(--mapping-script "${mapping_script}")
   fi
 done
+derived_output_prefixes="${DASHBOARD_DERIVED_OUTPUT_PREFIXES:-JetMET=/store/group/lpcdisapptrks/ntuplizer}"
+IFS=',' read -r -a configured_derived_prefixes <<< "${derived_output_prefixes}"
+for derived_prefix in "${configured_derived_prefixes[@]}"; do
+  if [[ -n "${derived_prefix}" ]]; then
+    completeness_args+=(--derived-prefix "${derived_prefix}")
+  fi
+done
 python3 "${SCRIPT_DIR}/collect_output_completeness.py" "${completeness_args[@]}"
 
 eos_args=(

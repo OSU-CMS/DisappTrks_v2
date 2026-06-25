@@ -42,6 +42,9 @@ def render_completeness_page() -> None:
         return
 
     df = pd.DataFrame(record for record in records if isinstance(record, dict))
+    _render_era_progress(df)
+
+    st.subheader("Mapped Tasks")
     filtered = _render_filters(df)
     st.caption(f"Showing {len(filtered)} of {len(df)} mapped tasks.")
     st.dataframe(_display_columns(filtered), hide_index=True, use_container_width=True)
@@ -97,6 +100,85 @@ def _render_errors(summary: dict[str, Any]) -> None:
     errors = summary.get("errors", [])
     if isinstance(errors, list) and errors:
         st.warning("\n".join(str(error) for error in errors))
+
+
+def _render_era_progress(df: pd.DataFrame) -> None:
+    st.subheader("Data Era Progress")
+    era_progress = _progress_by_era(df)
+    if era_progress.empty:
+        st.info("No data eras could be identified from the mapped task names.")
+        return
+
+    st.dataframe(
+        era_progress[
+            [
+                "era",
+                "status",
+                "progress",
+                "matched_outputs",
+                "expected_jobs",
+                "tasks",
+                "awaiting_job_counts",
+            ]
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    for row in era_progress.itertuples(index=False):
+        label = (
+            f"{row.era}: {row.progress}% - {str(row.status).replace('_', ' ')} "
+            f"({row.matched_outputs}/{row.expected_jobs} outputs)"
+        )
+        if row.awaiting_job_counts:
+            label += f", {row.awaiting_job_counts} task(s) awaiting CRAB counts"
+        st.progress(int(row.progress), text=label)
+
+
+def _progress_by_era(df: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    prepared = df.copy()
+    prepared["data_era"] = prepared["task_name"].astype(str).map(_data_era)
+    prepared = prepared[prepared["data_era"] != ""]
+
+    for era, group in prepared.groupby("data_era", sort=True):
+        expected = pd.to_numeric(group["expected_jobs"], errors="coerce").fillna(0).astype(int)
+        unique = pd.to_numeric(group["unique_outputs"], errors="coerce").fillna(0).astype(int)
+        known = expected > 0
+        expected_jobs = int(expected[known].sum())
+        matched_outputs = int(pd.concat([expected[known], unique[known]], axis=1).min(axis=1).sum())
+        awaiting_job_counts = int((~known).sum())
+        progress = (100 * matched_outputs // expected_jobs) if expected_jobs else 0
+        if awaiting_job_counts and progress == 100:
+            progress = 99
+
+        if progress == 100 and awaiting_job_counts == 0:
+            status = "complete"
+        elif matched_outputs > 0 or awaiting_job_counts < len(group):
+            status = "in_progress"
+        else:
+            status = "not_started"
+
+        rows.append(
+            {
+                "era": era,
+                "status": status,
+                "progress": progress,
+                "matched_outputs": matched_outputs,
+                "expected_jobs": expected_jobs,
+                "tasks": len(group),
+                "awaiting_job_counts": awaiting_job_counts,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def _data_era(task_name: str) -> str:
+    parts = task_name.split("_")
+    if len(parts) < 2 or not parts[0].isdigit():
+        return ""
+    return f"{parts[0]}{parts[1]}"
 
 
 def _render_filters(df: pd.DataFrame) -> pd.DataFrame:

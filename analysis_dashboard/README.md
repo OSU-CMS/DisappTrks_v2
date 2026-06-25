@@ -149,6 +149,11 @@ DASHBOARD_CRAB_WORKERS=8
 DASHBOARD_CRAB_TIMEOUT_SEC=120
 ```
 
+When multiple CRAB task directories differ only by a terminal `_vN`, only the
+largest `N` is monitored. The version match is anchored to the end of the task
+name, so internal components such as `2024_I_v2_Muon0_v3` are preserved and only
+the final `v3` is treated as the production iteration.
+
 Output completeness reuses the `DATASETS` and `BASE` definitions in:
 
 ```text
@@ -166,12 +171,31 @@ with:
 DASHBOARD_OUTPUT_MAPPING_SCRIPTS=/path/to/mapping_one.py,/path/to/mapping_two.py
 ```
 
+JetMET mappings are derived from the latest CRAB task names and stored under the
+organized ntuplizer area:
+
+```bash
+DASHBOARD_DERIVED_OUTPUT_PREFIXES=JetMET=/store/group/lpcdisapptrks/ntuplizer
+```
+
+For example, `2023_C_v1_JetMET0_v4` maps to:
+
+```text
+/store/group/lpcdisapptrks/ntuplizer/JetMET0/2023_C_v1_JetMET0_v4
+```
+
 The Analysis Tasks page can synchronize these mapped productions into SQLite.
 The operation is idempotent: it adds missing tasks and updates status/progress
-for existing production tasks. Complete or extra-file results become complete;
+for existing production tasks, and removes generated tasks superseded by a
+newer terminal version. Complete or extra-file results become complete;
 incomplete results use the observed-output fraction; unknown results wait for a
 valid CRAB job count. `sync_snapshots.sh` runs this task synchronization
 automatically after copying fresh snapshots.
+
+The Output Completeness page also aggregates mapped tasks by data era. Each era
+shows matched EOS outputs versus expected CRAB jobs, a percentage progress bar,
+and a status of complete, in progress, or not started. An era is only complete
+when all mapped tasks have valid expected-job counts and reach 100%.
 
 EOS inventory defaults to:
 

@@ -22,6 +22,7 @@ def render_tasks_page() -> None:
         st.success(
             f"Synced {result['total']} production tasks: "
             f"{result['inserted']} added, {result['updated']} updated, "
+            f"{result['removed']} superseded tasks removed, "
             f"{result['complete']} complete."
         )
         st.rerun()

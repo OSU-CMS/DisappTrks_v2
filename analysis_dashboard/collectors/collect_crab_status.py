@@ -23,6 +23,7 @@ JOB_COUNT_PATTERN = re.compile(
 )
 SERVER_STATUS_PATTERN = re.compile(r"Status on the CRAB server:\s+([A-Za-z_]+)", re.IGNORECASE)
 TASK_STATUS_PATTERN = re.compile(r"Task status:\s+([A-Za-z_]+)", re.IGNORECASE)
+TERMINAL_VERSION_PATTERN = re.compile(r"^(?P<base>.+)_v(?P<version>\d+)$")
 
 
 def main() -> None:
@@ -111,7 +112,21 @@ def _discover_tasks(patterns: list[str]) -> list[Path]:
             path = Path(match)
             if path.is_dir():
                 paths.add(path.resolve())
-    return sorted(paths)
+    return _latest_task_paths(paths)
+
+
+def _latest_task_paths(paths: set[Path]) -> list[Path]:
+    latest: dict[tuple[Path, str], tuple[int, Path]] = {}
+    for path in paths:
+        task_name = path.name.removeprefix("crab_")
+        match = TERMINAL_VERSION_PATTERN.fullmatch(task_name)
+        family = match.group("base") if match else task_name
+        version = int(match.group("version")) if match else -1
+        key = (path.parent, family)
+        current = latest.get(key)
+        if current is None or version > current[0]:
+            latest[key] = (version, path)
+    return sorted(path for _version, path in latest.values())
 
 
 def _collect_task(task_path: Path, timeout_sec: int) -> dict[str, Any]:

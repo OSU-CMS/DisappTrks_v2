@@ -18,6 +18,7 @@ from typing import Any
 
 
 JOB_FILE_PATTERN = re.compile(r"^ntuple_(\d+)(?:_\d+)?\.root$")
+TERMINAL_VERSION_PATTERN = re.compile(r"^(?P<base>.+)_v(?P<version>\d+)$")
 
 
 def main() -> None:
@@ -28,6 +29,8 @@ def main() -> None:
     collected_at = datetime.now(timezone.utc).astimezone()
     crab_records = _load_crab_records(args.crab_snapshot)
     mappings = _load_mappings(args.mapping_scripts)
+    mappings.extend(_derive_mappings(crab_records, args.derived_prefixes))
+    mappings = _latest_mappings(mappings)
     records: list[dict[str, Any]] = []
     errors: list[str] = []
     status = "ok"
@@ -90,6 +93,16 @@ def parse_args() -> argparse.Namespace:
         default="root://cmseosmgm01.fnal.gov",
         help="XRootD endpoint passed to xrdfs.",
     )
+    parser.add_argument(
+        "--derived-prefix",
+        dest="derived_prefixes",
+        action="append",
+        default=[],
+        help=(
+            "Derive mappings as TASK_PREFIX[:EOS_PARENT_PREFIX]=/eos/base "
+            "from CRAB task names. May be repeated."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -129,6 +142,58 @@ def _load_mappings(paths: list[Path]) -> list[dict[str, str]]:
                     }
                 )
     return sorted(mappings, key=lambda item: (item["source"], item["group"], item["task_name"]))
+
+
+def _derive_mappings(
+    crab_records: dict[str, dict[str, Any]],
+    specifications: list[str],
+) -> list[dict[str, str]]:
+    mappings: list[dict[str, str]] = []
+    for specification in specifications:
+        prefix_spec, separator, base = specification.partition("=")
+        if not separator or not prefix_spec or not base:
+            raise ValueError(
+                f"Invalid derived prefix {specification!r}; "
+                "expected TASK_PREFIX[:EOS_PARENT_PREFIX]=/eos/base."
+            )
+        task_prefix, parent_separator, eos_parent_prefix = prefix_spec.partition(":")
+        if not parent_separator:
+            eos_parent_prefix = task_prefix
+
+        for task_name in crab_records:
+            parts = task_name.split("_")
+            task_dataset = next((part for part in parts if part.startswith(task_prefix)), "")
+            if not task_dataset:
+                continue
+            suffix = task_dataset[len(task_prefix):]
+            eos_parent = f"{eos_parent_prefix}{suffix}"
+            group = "_".join(parts[:2]) if len(parts) >= 2 else ""
+            mappings.append(
+                {
+                    "source": task_prefix.lower(),
+                    "group": group,
+                    "task_name": task_name,
+                    "eos_dir": f"{base.rstrip('/')}/{eos_parent}/{task_name}",
+                }
+            )
+    return mappings
+
+
+def _latest_mappings(mappings: list[dict[str, str]]) -> list[dict[str, str]]:
+    latest: dict[tuple[str, str], tuple[int, dict[str, str]]] = {}
+    for mapping in mappings:
+        task_name = mapping["task_name"]
+        match = TERMINAL_VERSION_PATTERN.fullmatch(task_name)
+        family = match.group("base") if match else task_name
+        version = int(match.group("version")) if match else -1
+        key = (mapping["source"], family)
+        current = latest.get(key)
+        if current is None or version > current[0]:
+            latest[key] = (version, mapping)
+    return sorted(
+        (mapping for _version, mapping in latest.values()),
+        key=lambda item: (item["source"], item["group"], item["task_name"]),
+    )
 
 
 def _collect_mapping(
