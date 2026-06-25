@@ -62,6 +62,7 @@ def render_completeness_page() -> None:
             "unexpected_job_ids": selected.get("unexpected_job_ids") or [],
             "duplicate_job_ids": selected.get("duplicate_job_ids") or [],
             "attempts": selected.get("attempts") or [],
+            "ignored_attempts": selected.get("ignored_attempts") or [],
             "unparsed_files": selected.get("unparsed_files") or [],
             "error": selected.get("error") or "",
         }

@@ -19,6 +19,7 @@ from typing import Any
 
 JOB_FILE_PATTERN = re.compile(r"^.+_(\d+)\.root$")
 TERMINAL_VERSION_PATTERN = re.compile(r"^(?P<base>.+)_v(?P<version>\d+)$")
+ATTEMPT_TIMESTAMP_PATTERN = re.compile(r"^\d{6}_\d{6}$")
 
 
 def main() -> None:
@@ -222,18 +223,18 @@ def _collect_mapping(
         for line in str(list_result["stdout"]).splitlines()
         if line.strip().endswith(".root")
     ]
+    root_paths, selected_attempt, ignored_attempts = _latest_attempt_paths(
+        root_paths,
+        mapping["eos_dir"],
+    )
     job_ids: list[int] = []
     unparsed_files: list[str] = []
-    attempts: set[str] = set()
     for path in root_paths:
         match = JOB_FILE_PATTERN.match(PurePosixPath(path).name)
         if match:
             job_ids.append(int(match.group(1)))
         else:
             unparsed_files.append(path)
-        attempt = _attempt_from_path(path, mapping["eos_dir"])
-        if attempt:
-            attempts.add(attempt)
 
     counts = Counter(job_ids)
     unique_ids = set(counts)
@@ -255,7 +256,8 @@ def _collect_mapping(
         duplicate_job_ids=duplicate_ids,
         duplicate_files=sum(count - 1 for count in counts.values() if count > 1),
         unparsed_files=unparsed_files,
-        attempts=sorted(attempts),
+        attempts=[selected_attempt] if selected_attempt else [],
+        ignored_attempts=ignored_attempts,
     )
 
 
@@ -273,6 +275,7 @@ def _build_record(
     duplicate_files: int = 0,
     unparsed_files: list[str] | None = None,
     attempts: list[str] | None = None,
+    ignored_attempts: list[str] | None = None,
     error: str = "",
 ) -> dict[str, Any]:
     return {
@@ -289,6 +292,7 @@ def _build_record(
         "unparsed_count": len(unparsed_files or []),
         "unparsed_files": unparsed_files or [],
         "attempts": attempts or [],
+        "ignored_attempts": ignored_attempts or [],
         "crab_failed_jobs": _as_int(crab.get("failed_jobs")) or 0,
         "crab_complete": bool(crab.get("complete")),
         "crab_status_error": bool(crab.get("status_error")),
@@ -327,6 +331,25 @@ def _attempt_from_path(path: str, eos_dir: str) -> str:
     relative = path[len(prefix):] if path.startswith(prefix) else ""
     parts = PurePosixPath(relative).parts
     return parts[0] if len(parts) > 1 else ""
+
+
+def _latest_attempt_paths(paths: list[str], eos_dir: str) -> tuple[list[str], str, list[str]]:
+    timestamped: dict[str, list[str]] = {}
+    unversioned: list[str] = []
+
+    for path in paths:
+        attempt = _attempt_from_path(path, eos_dir)
+        if ATTEMPT_TIMESTAMP_PATTERN.fullmatch(attempt):
+            timestamped.setdefault(attempt, []).append(path)
+        else:
+            unversioned.append(path)
+
+    if not timestamped:
+        return paths, "", []
+
+    selected = max(timestamped)
+    ignored = sorted(attempt for attempt in timestamped if attempt != selected)
+    return timestamped[selected] + unversioned, selected, ignored
 
 
 def _completion_result(expected_jobs: int, missing_ids: list[int], unexpected_ids: list[int]) -> str:

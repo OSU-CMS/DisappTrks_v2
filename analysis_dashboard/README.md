@@ -171,6 +171,10 @@ with:
 DASHBOARD_OUTPUT_MAPPING_SCRIPTS=/path/to/mapping_one.py,/path/to/mapping_two.py
 ```
 
+When a task directory contains multiple production timestamp directories in
+`YYMMDD_HHMMSS` format, only files from the latest timestamp are counted. Older
+attempts are recorded in task details but ignored for completeness calculations.
+
 JetMET mappings are derived from the latest CRAB task names and stored under the
 organized ntuplizer area:
 
