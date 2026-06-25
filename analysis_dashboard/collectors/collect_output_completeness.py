@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-JOB_FILE_PATTERN = re.compile(r"^ntuple_(\d+)(?:_\d+)?\.root$")
+JOB_FILE_PATTERN = re.compile(r"^.+_(\d+)\.root$")
 TERMINAL_VERSION_PATTERN = re.compile(r"^(?P<base>.+)_v(?P<version>\d+)$")
 
 
